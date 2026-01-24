@@ -1,0 +1,10 @@
+{
+	"name": "@speckey/io",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./src/file-discovery/index.ts",
+	"types": "./src/file-discovery/index.ts",
+	"dependencies": {
+		"@speckey/shared": "workspace:*"
+	}
+}
