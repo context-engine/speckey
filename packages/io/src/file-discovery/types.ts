@@ -43,6 +43,34 @@ export interface DiscoveredFiles {
 }
 
 /**
+ * Result of reading file contents.
+ */
+export interface FileContents {
+	/**
+	 * Successfully read file contents.
+	 */
+	contents: FileContent[];
+	/**
+	 * Errors encountered during reading.
+	 */
+	errors: DiscoveryError[];
+}
+
+/**
+ * A single file's content.
+ */
+export interface FileContent {
+	/**
+	 * Absolute path to file.
+	 */
+	path: string;
+	/**
+	 * File content as UTF-8 string.
+	 */
+	content: string;
+}
+
+/**
  * Information about a skipped file.
  */
 export interface SkippedFile {
@@ -64,6 +92,7 @@ export enum SkipReason {
 	TOO_LARGE = "too_large",
 	NOT_MARKDOWN = "not_markdown",
 	PERMISSION_DENIED = "permission_denied",
+	INVALID_ENCODING = "invalid_encoding",
 }
 
 /**
@@ -83,3 +112,4 @@ export interface DiscoveryError {
 	 */
 	code: string;
 }
+

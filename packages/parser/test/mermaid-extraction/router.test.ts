@@ -74,6 +74,17 @@ describe("DiagramRouter", () => {
             expect(router.detectDiagramType(content)).toBe(DiagramType.PIE);
         });
 
+        it("should detect mindmap", () => {
+            const content = `mindmap
+  root((mindmap))
+    Origins
+      Long history
+    Research
+      On effectiveness
+			`;
+            expect(router.detectDiagramType(content)).toBe(DiagramType.MINDMAP);
+        });
+
         it("should return UNKNOWN for invalid mermaid", () => {
             const content = `this is not valid mermaid
 				just some random text

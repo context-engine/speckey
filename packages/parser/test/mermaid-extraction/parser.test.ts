@@ -284,5 +284,104 @@ Just text.
 		expect(result.routedBlocks).toHaveLength(0);
 		expect(result.errors).toHaveLength(0);
 	});
+
+	it("should return routedBlocks with correct MINDMAP type", () => {
+		const markdown = `
+\`\`\`mermaid
+mindmap
+  root((Central))
+    Topic1
+    Topic2
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.MINDMAP);
+	});
+
+	it("should mark UNKNOWN blocks with diagramType UNKNOWN", () => {
+		const markdown = `
+\`\`\`mermaid
+this is invalid mermaid content
+not a valid diagram
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
+		expect(result.routedBlocks[0]?.isSupported).toBe(true);
+	});
+
+	it("should preserve source file and line numbers for downstream parsers", () => {
+		const markdown = `# Architecture Document
+
+Some introduction text here.
+
+\`\`\`mermaid
+classDiagram
+  class Parser {
+    +parse()
+  }
+\`\`\`
+
+More content here.
+`;
+		const result = parser.parse(markdown, "architecture.md");
+
+		expect(result.sourceFile).toBe("architecture.md");
+		expect(result.routedBlocks).toHaveLength(1);
+
+		const routedBlock = result.routedBlocks[0];
+		expect(routedBlock?.block.startLine).toBe(5);
+		expect(routedBlock?.block.endLine).toBe(10);
+		expect(routedBlock?.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
+	});
+
+	it("should return routedBlocks with correct STATE_DIAGRAM type", () => {
+		const markdown = `
+\`\`\`mermaid
+stateDiagram-v2
+  [*] --> Active
+  Active --> [*]
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(
+			DiagramType.STATE_DIAGRAM,
+		);
+	});
+
+	it("should return routedBlocks with correct GANTT type", () => {
+		const markdown = `
+\`\`\`mermaid
+gantt
+  title A Gantt Diagram
+  section Section
+  A task: a1, 2024-01-01, 30d
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.GANTT);
+	});
+
+	it("should return routedBlocks with correct PIE type", () => {
+		const markdown = `
+\`\`\`mermaid
+pie title Distribution
+  "A" : 40
+  "B" : 60
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.PIE);
+	});
 });
 

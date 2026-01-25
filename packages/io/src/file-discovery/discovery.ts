@@ -3,6 +3,8 @@ import { Glob } from "bun";
 import {
 	type DiscoveredFiles,
 	type DiscoveryConfig,
+	type FileContent,
+	type FileContents,
 	SkipReason,
 } from "./types";
 
@@ -154,6 +156,63 @@ export class FileDiscovery {
 		}
 	}
 
+	/**
+	 * Read file contents with validation.
+	 * Phase 1b: File Reading
+	 */
+	public async readFiles(files: string[]): Promise<FileContents> {
+		const result: FileContents = {
+			contents: [],
+			errors: [],
+		};
+
+		for (const filePath of files) {
+			try {
+				const file = Bun.file(filePath);
+
+				// Check if file exists
+				if (!(await file.exists())) {
+					result.errors.push({
+						path: filePath,
+						message: "File does not exist",
+						code: "ENOENT",
+					});
+					continue;
+				}
+
+				// Read file content
+				const content = await file.text();
+
+				// Validate UTF-8 encoding by checking for replacement character
+				// Bun.file().text() will replace invalid sequences with replacement char
+				if (content.includes("\uFFFD")) {
+					result.errors.push({
+						path: filePath,
+						message: "Invalid UTF-8 encoding",
+						code: "INVALID_ENCODING",
+					});
+					continue;
+				}
+
+				result.contents.push({
+					path: filePath,
+					content,
+				});
+			} catch (error: unknown) {
+				const message =
+					error instanceof Error ? error.message : "Error reading file";
+				const code = (error as { code?: string })?.code || "EACCES";
+				result.errors.push({
+					path: filePath,
+					message,
+					code,
+				});
+			}
+		}
+
+		return result;
+	}
+
 	private validateFileLimit(files: string[], limit: number): void {
 		// Specs say: "Warn/confirm if exceeds limit"
 		// Since this is a logic module, we just keep the files but could potentially truncate
@@ -164,3 +223,4 @@ export class FileDiscovery {
 		}
 	}
 }
+
