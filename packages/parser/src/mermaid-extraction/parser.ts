@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { visit } from "unist-util-visit";
+import { DiagramRouter } from "./router";
 import {
 	type CodeBlock,
 	ErrorSeverity,
@@ -15,6 +16,8 @@ import {
  * MarkdownParser extracts Mermaid code blocks and tables from markdown content.
  */
 export class MarkdownParser {
+	private router = new DiagramRouter();
+
 	/**
 	 * Parses markdown content and extracts structured data.
 	 *
@@ -26,10 +29,12 @@ export class MarkdownParser {
 		try {
 			const ast = this.buildAST(content);
 			const blocks = this.extractCodeBlocks(ast);
+			const routedBlocks = this.router.routeBlocks(blocks);
 			const tables = this.extractTables(ast);
 
 			return {
 				blocks,
+				routedBlocks,
 				tables,
 				sourceFile,
 				errors: [],
@@ -37,6 +42,7 @@ export class MarkdownParser {
 		} catch (error) {
 			return {
 				blocks: [],
+				routedBlocks: [],
 				tables: [],
 				sourceFile,
 				errors: [
@@ -50,6 +56,7 @@ export class MarkdownParser {
 			};
 		}
 	}
+
 
 	/**
 	 * Builds a MDAST (Markdown Abstract Syntax Tree) from content.

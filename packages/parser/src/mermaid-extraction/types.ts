@@ -8,6 +8,21 @@ export enum ErrorSeverity {
 }
 
 /**
+ * Type of mermaid diagram detected by mermaid.detectType().
+ */
+export enum DiagramType {
+	CLASS_DIAGRAM = "classDiagram",
+	SEQUENCE_DIAGRAM = "sequenceDiagram",
+	ER_DIAGRAM = "erDiagram",
+	FLOWCHART = "flowchart",
+	STATE_DIAGRAM = "stateDiagram",
+	GANTT = "gantt",
+	PIE = "pie",
+	MINDMAP = "mindmap",
+	UNKNOWN = "unknown",
+}
+
+/**
  * Represents a single error encountered during parsing.
  */
 export interface ParseError {
@@ -28,6 +43,18 @@ export interface CodeBlock {
 	startLine: number;
 	/** 1-indexed end line of the block (including fence) */
 	endLine: number;
+}
+
+/**
+ * A routed code block with detected diagram type.
+ */
+export interface RoutedBlock {
+	/** The original code block */
+	block: CodeBlock;
+	/** Detected mermaid diagram type */
+	diagramType: DiagramType;
+	/** Whether the diagram type is supported for further processing */
+	isSupported: boolean;
 }
 
 /**
@@ -56,6 +83,8 @@ export interface TableRow {
 export interface ParseResult {
 	/** Extracted mermaid code blocks */
 	blocks: CodeBlock[];
+	/** Routed blocks with detected diagram types */
+	routedBlocks: RoutedBlock[];
 	/** Extracted markdown tables */
 	tables: TableNode[];
 	/** Original source file path */
@@ -63,3 +92,4 @@ export interface ParseResult {
 	/** Errors encountered during parsing */
 	errors: ParseError[];
 }
+

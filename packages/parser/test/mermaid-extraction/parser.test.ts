@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { MarkdownParser } from "../../src/mermaid-extraction/parser";
+import { DiagramType } from "../../src/mermaid-extraction/types";
 
 describe("MarkdownParser", () => {
 	const parser = new MarkdownParser();
@@ -150,3 +151,138 @@ classDiagram
 		expect(result.tables[0]?.rows[2]?.cells).toEqual(["y", "", "z"]);
 	});
 });
+
+// Contract-derived integration tests (02-mermaid-block-extraction.md)
+describe("ParseResult.routedBlocks (Contract: Diagram Type Detection)", () => {
+	const parser = new MarkdownParser();
+
+	it("should return routedBlocks with correct CLASS_DIAGRAM type", () => {
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo {
+    +bar()
+  }
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
+		expect(result.routedBlocks[0]?.isSupported).toBe(true);
+		expect(result.routedBlocks[0]?.block).toBe(result.blocks[0]);
+	});
+
+	it("should return routedBlocks with correct SEQUENCE_DIAGRAM type", () => {
+		const markdown = `
+\`\`\`mermaid
+sequenceDiagram
+  Alice->>Bob: Hello
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(
+			DiagramType.SEQUENCE_DIAGRAM,
+		);
+	});
+
+	it("should return routedBlocks with correct ER_DIAGRAM type", () => {
+		const markdown = `
+\`\`\`mermaid
+erDiagram
+  USER ||--o{ ORDER : places
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.ER_DIAGRAM);
+	});
+
+	it("should return routedBlocks with correct FLOWCHART type", () => {
+		const markdown = `
+\`\`\`mermaid
+flowchart LR
+  A --> B
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.FLOWCHART);
+	});
+
+	it("should return UNKNOWN for invalid mermaid content", () => {
+		const markdown = `
+\`\`\`mermaid
+this is not valid mermaid
+just random text
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
+	});
+
+	it("should route multiple blocks with different diagram types", () => {
+		const markdown = `
+# Architecture
+
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+
+\`\`\`mermaid
+sequenceDiagram
+  A->>B: Hi
+\`\`\`
+
+\`\`\`mermaid
+erDiagram
+  USER ||--o{ ORDER : places
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.routedBlocks).toHaveLength(3);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
+		expect(result.routedBlocks[1]?.diagramType).toBe(
+			DiagramType.SEQUENCE_DIAGRAM,
+		);
+		expect(result.routedBlocks[2]?.diagramType).toBe(DiagramType.ER_DIAGRAM);
+	});
+
+	it("should track line numbers in routedBlocks (Contract: Line Number Tracking)", () => {
+		const markdown = `# Session Manager
+
+Some description.
+
+\`\`\`mermaid
+classDiagram
+  class Parser
+\`\`\`
+`;
+		const result = parser.parse(markdown, "session.md");
+
+		expect(result.sourceFile).toBe("session.md");
+		expect(result.routedBlocks[0]?.block.startLine).toBe(5);
+		expect(result.routedBlocks[0]?.block.endLine).toBe(8);
+	});
+
+	it("should handle no mermaid blocks (Contract: Empty blocks scenario)", () => {
+		const markdown = `# No diagrams here
+
+Just text.
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(0);
+		expect(result.routedBlocks).toHaveLength(0);
+		expect(result.errors).toHaveLength(0);
+	});
+});
+
