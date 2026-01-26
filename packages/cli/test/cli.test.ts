@@ -106,7 +106,7 @@ describe("CLI", () => {
         });
 
         it("should apply --exclude patterns", async () => {
-            const exitCode = await cli.run([testDir, "--exclude", "*.md", "--quiet"]);
+            const exitCode = await cli.run([testDir, "--exclude", "**/*.md", "--quiet"]);
             // Should find no files because all .md files are excluded
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });

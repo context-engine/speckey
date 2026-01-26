@@ -13,6 +13,13 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/cli": {
+      "name": "@speckey/cli",
+      "version": "0.1.0",
+      "dependencies": {
+        "@speckey/core": "workspace:*",
+      },
+    },
     "packages/core": {
       "name": "@speckey/core",
       "version": "0.1.0",
@@ -232,6 +239,8 @@
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
 
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
+
+    "@speckey/cli": ["@speckey/cli@workspace:packages/cli"],
 
     "@speckey/core": ["@speckey/core@workspace:packages/core"],
 
