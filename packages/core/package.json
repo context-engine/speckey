@@ -1,0 +1,11 @@
+{
+    "name": "@speckey/core",
+    "version": "0.1.0",
+    "type": "module",
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "dependencies": {
+        "@speckey/io": "workspace:*",
+        "@speckey/parser": "workspace:*"
+    }
+}

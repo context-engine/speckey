@@ -2,6 +2,8 @@
 	"name": "@speckey/parser",
 	"version": "0.1.0",
 	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
 	"dependencies": {
 		"@speckey/shared": "workspace:*",
 		"mermaid": "^11.12.2",
