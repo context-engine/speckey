@@ -1,0 +1,29 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "moduleResolution": "bundler",
+        "target": "ESNext",
+        "module": "ESNext",
+        "verbatimModuleSyntax": true,
+        "skipLibCheck": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "lib": [
+            "ESNext",
+            "DOM",
+            "DOM.Iterable"
+        ]
+    },
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.svelte"
+    ],
+    "exclude": [
+        "dist",
+        "node_modules"
+    ]
+}

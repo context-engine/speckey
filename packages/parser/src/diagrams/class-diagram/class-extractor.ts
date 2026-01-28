@@ -93,6 +93,7 @@ export class ClassExtractor {
         let inClassBody = false;
         let currentNamespace: string | undefined = undefined;
         let inNamespaceBody = false;
+        let pendingStereotype: Stereotype | null = null; // Track stereotype before class
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -113,6 +114,20 @@ export class ClassExtractor {
                 continue;
             }
 
+            // Check for stereotype annotation (before or after class)
+            if (line.startsWith("<<") && line.endsWith(">>")) {
+                const stereotype = line.slice(2, -2).toLowerCase();
+                const mappedStereotype = this.mapStereotype(stereotype);
+                if (currentClass) {
+                    // Apply to current class
+                    currentClass.stereotype = mappedStereotype;
+                } else {
+                    // Store for next class
+                    pendingStereotype = mappedStereotype;
+                }
+                continue;
+            }
+
             // Check for class declaration
             const classMatch = line.match(/^class\s+([^{]+?)\s*(\{)?$/);
             if (classMatch && classMatch[1]) {
@@ -129,12 +144,14 @@ export class ClassExtractor {
                     name: nameInfo.name,
                     isGeneric: nameInfo.isGeneric,
                     typeParams: nameInfo.typeParams,
-                    stereotype: "class",
+                    stereotype: pendingStereotype || "class", // Use pending or default
                     body: { methods: [], properties: [], enumValues: [] },
                     namespace: currentNamespace,
                     startLine: currentClassStartLine,
                     endLine: currentClassStartLine,
                 };
+
+                pendingStereotype = null; // Reset after use
 
                 inClassBody = !!classMatch[2];
                 continue;
@@ -143,16 +160,13 @@ export class ClassExtractor {
             // Check for closing brace
             if (line === "}" && currentClass && inClassBody) {
                 currentClass.endLine = blockStartLine + i;
+                results.push(currentClass);
+                currentClass = null;
                 inClassBody = false;
                 continue;
             }
 
-            // Check for stereotype annotation
-            if (currentClass && line.startsWith("<<") && line.endsWith(">>")) {
-                const stereotype = line.slice(2, -2).toLowerCase();
-                currentClass.stereotype = this.mapStereotype(stereotype);
-                continue;
-            }
+
 
             // Parse members if we're inside a class body
             if (currentClass && inClassBody) {
@@ -174,18 +188,18 @@ export class ClassExtractor {
     private extractRelations(lines: string[]): ParsedRelation[] {
         const relations: ParsedRelation[] = [];
 
-        // Relation patterns
+        // Relation patterns (order matters - more specific first)
         const relationPatterns = [
             { regex: /<\|--/, type: "inheritance" as RelationType },
             { regex: /\*--/, type: "composition" as RelationType },
             { regex: /o--/, type: "aggregation" as RelationType },
             { regex: /-->/, type: "association" as RelationType },
-            { regex: /--/, type: "link" as RelationType },
             { regex: /\.\.\|>/, type: "realization" as RelationType },
             { regex: /\.\.>/, type: "dependency" as RelationType },
             { regex: /\.\./, type: "dashed" as RelationType },
             { regex: /\(\)--/, type: "lollipop" as RelationType },
             { regex: /--\(\)/, type: "lollipop" as RelationType },
+            { regex: /--/, type: "link" as RelationType }, // Must be after lollipop
         ];
 
         for (const line of lines) {
@@ -275,11 +289,15 @@ export class ClassExtractor {
                         currentNamespace = null;
                     }
                 } else {
-                    const classMatch = line.match(/^class\s+([^{]+?)\s*\{?$/);
+                    const classMatch = line.match(/^class\s+([^{]+?)(\s*\{)?$/);
                     if (classMatch && classMatch[1]) {
                         const rawName = classMatch[1].trim();
                         const nameInfo = this.parseClassName(rawName);
                         currentNamespace.classes.push(nameInfo.name);
+                        // If class has opening brace on same line, track it
+                        if (classMatch[2]) {
+                            braceDepth++;
+                        }
                     }
                 }
             }

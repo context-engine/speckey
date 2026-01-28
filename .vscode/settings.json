@@ -1,0 +1,13 @@
+{
+    "svelte.plugin.svelte.useNewTransformation": true,
+    "svelte.enable-ts-plugin": true,
+    "files.associations": {
+        "svelte.config.js": "javascript"
+    },
+    "files.exclude": {
+        "**/.svelte-kit": true
+    },
+    "[svelte]": {
+        "editor.defaultFormatter": "svelte.svelte-vscode"
+    }
+}

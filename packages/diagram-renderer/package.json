@@ -1,0 +1,40 @@
+{
+    "name": "@speckey/diagram-renderer",
+    "version": "0.0.1",
+    "type": "module",
+    "svelte": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "svelte": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "dev": "storybook dev -p 6007",
+        "build": "svelte-package",
+        "build:storybook": "storybook build",
+        "check": "svelte-check --tsconfig ./tsconfig.json"
+    },
+    "peerDependencies": {
+        "svelte": "^5.0.0"
+    },
+    "dependencies": {
+        "@xyflow/svelte": "^1.5.0",
+        "elkjs": "^0.11.0",
+        "mermaid-ast": "^0.8.2"
+    },
+    "devDependencies": {
+        "@storybook/addon-essentials": "8.6.15",
+        "@storybook/svelte": "8.6.15",
+        "@storybook/svelte-vite": "8.6.15",
+        "@sveltejs/package": "^2.5.7",
+        "@sveltejs/vite-plugin-svelte": "^6.2.4",
+        "@types/bun": "latest",
+        "storybook": "8.6.15",
+        "svelte": "^5.47.1",
+        "svelte-check": "^4.3.5",
+        "typescript": "^5.9.3",
+        "vite": "^7.3.1"
+    }
+}

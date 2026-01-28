@@ -1,11 +1,15 @@
 {
 	"name": "speckey",
 	"version": "0.1.0",
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.12",
+		"@stryker-mutator/core": "^9.4.0",
+		"@stryker-mutator/typescript-checker": "^9.4.0",
+		"@types/bun": "^1.3.6",
+		"fast-check": "^4.5.3",
+		"typescript": "^5.9.3"
+	},
 	"private": true,
-	"type": "module",
-	"workspaces": [
-		"packages/*"
-	],
 	"scripts": {
 		"dev": "bun run --filter '*' dev",
 		"build": "bun run --filter '*' build",
@@ -17,12 +21,8 @@
 		"check": "biome check --write .",
 		"quality": "bun test --coverage && biome check . && echo '✅ All quality checks passed'"
 	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.3.12",
-		"@stryker-mutator/core": "^9.4.0",
-		"@stryker-mutator/typescript-checker": "^9.4.0",
-		"@types/bun": "^1.3.6",
-		"fast-check": "^4.5.3",
-		"typescript": "^5.9.3"
-	}
+	"type": "module",
+	"workspaces": [
+		"packages/*"
+	]
 }
