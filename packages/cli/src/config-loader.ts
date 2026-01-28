@@ -105,7 +105,7 @@ export class ConfigLoader {
     ): Omit<PipelineConfig, "paths"> {
         return {
             ...base,
-            exclude: [...base.exclude, ...cliExclude],
+            exclude: [...(base.exclude || []), ...(cliExclude || [])],
         };
     }
 }

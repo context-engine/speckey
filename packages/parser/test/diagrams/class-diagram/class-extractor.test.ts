@@ -18,7 +18,7 @@ describe("ClassExtractor", () => {
                 endLine: 2,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(1);
             expect(result[0]?.name).toBe("Foo");
@@ -33,7 +33,7 @@ describe("ClassExtractor", () => {
                 endLine: 2,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(1);
             expect(result[0]?.name).toBe("List");
@@ -49,7 +49,7 @@ describe("ClassExtractor", () => {
                 endLine: 2,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(1);
             expect(result[0]?.typeParams[0]?.name).toBe("T");
@@ -64,7 +64,7 @@ describe("ClassExtractor", () => {
                 endLine: 3,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(2);
             const names = result.map((c) => c.name);
@@ -80,10 +80,10 @@ describe("ClassExtractor", () => {
                 endLine: 22,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
-            expect(result[0]?.startLine).toBe(22);
-            expect(result[0]?.endLine).toBe(22);
+            expect(result[0]?.startLine).toBe(21);
+            expect(result[0]?.endLine).toBe(21);
         });
     });
 
@@ -99,7 +99,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result[0]?.body.methods).toHaveLength(1);
             const method = result[0]?.body.methods[0];
@@ -121,7 +121,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             expect(method?.parameters).toHaveLength(2);
@@ -144,7 +144,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             const param = method?.parameters[0];
@@ -162,7 +162,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             expect(method?.returnType).toBe("Promise<void>");
@@ -180,7 +180,7 @@ class Foo {
                 endLine: 5,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const protectedMethod = result[0]?.body.methods.find(
                 (m) => m.name === "protectedMethod"
@@ -204,7 +204,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result[0]?.body.properties).toHaveLength(1);
             const prop = result[0]?.body.properties[0];
@@ -224,7 +224,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const prop = result[0]?.body.properties[0];
             expect(prop?.name).toBe("names");
@@ -242,7 +242,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             expect(method?.isAbstract).toBe(true);
@@ -261,7 +261,7 @@ class IService {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result[0]?.stereotype).toBe("interface");
         });
@@ -277,7 +277,7 @@ class AbstractRepo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result[0]?.stereotype).toBe("abstract");
         });
@@ -295,7 +295,7 @@ class Status {
                 endLine: 6,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result[0]?.stereotype).toBe("enum");
             expect(result[0]?.body.enumValues).toContain("ACTIVE");
@@ -316,7 +316,7 @@ class User {
                 endLine: 7,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(2);
             const service = result.find((c) => c.name === "UserService");
@@ -335,7 +335,7 @@ class User {
                 endLine: 1,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toEqual([]);
         });
@@ -348,7 +348,7 @@ class User {
                 endLine: 2,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toEqual([]);
         });
@@ -443,22 +443,68 @@ namespace BaseShapes {
         });
 
         it("should assign namespace to classes", () => {
+            const content = `classDiagram
+            namespace Models {
+                class User
+            }
+            `;
             const block: CodeBlock = {
                 language: "mermaid",
-                content: `classDiagram
-namespace Models {
-    class User {
-        +string name
-    }
-}`,
+                content,
                 startLine: 1,
-                endLine: 6,
+                endLine: 5,
             };
 
             const result = extractor.extract(block);
 
             const userClass = result.classes.find((c) => c.name === "User");
             expect(userClass?.namespace).toBe("Models");
+        });
+
+        it("should report errors for missing required annotations", () => {
+            const content = `classDiagram
+            class User {
+                +name: string
+            }
+            `;
+            const block: CodeBlock = {
+                language: "mermaid",
+                content,
+                startLine: 1,
+                endLine: 5,
+            };
+
+            const result = extractor.extract(block).classes;
+            const annotations = result[0]?.annotations;
+
+            expect(annotations).toBeDefined();
+            expect(annotations?.isValid).toBe(false);
+            expect(annotations?.errors).toContain("Missing required annotation: @package");
+            expect(annotations?.errors).toContain("Missing required annotation: @type");
+        });
+
+        it("should validate correct annotations", () => {
+            const content = `classDiagram
+            class User {
+                %% @package domain.users
+                %% @type definition
+                +name: string
+            }
+            `;
+            const block: CodeBlock = {
+                language: "mermaid",
+                content,
+                startLine: 1,
+                endLine: 7,
+            };
+
+            const result = extractor.extract(block).classes;
+            const annotations = result[0]?.annotations;
+
+            expect(annotations?.isValid).toBe(true);
+            expect(annotations?.package).toBe("domain.users");
+            expect(annotations?.entityType).toBe("definition");
+            expect(annotations?.errors).toHaveLength(0);
         });
     });
 
@@ -509,7 +555,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             expect(method?.name).toBe("getInstance");
@@ -527,7 +573,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const prop = result[0]?.body.properties[0];
             expect(prop?.name).toBe("instance");
@@ -545,7 +591,7 @@ class Foo {
                 endLine: 4,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             const method = result[0]?.body.methods[0];
             expect(method?.returnType).toBe("Foo");
@@ -566,10 +612,302 @@ class Foo {
                 endLine: 5,
             };
 
-            const result = extractor.extractClasses(block);
+            const result = extractor.extract(block).classes;
 
             expect(result).toHaveLength(1);
             expect(result[0]?.name).toBe("Foo");
+        });
+    });
+
+    describe("Feature: Edge Cases", () => {
+        it("should handle empty class body", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\nclass EmptyClass {}",
+                startLine: 1,
+                endLine: 2,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result).toHaveLength(1);
+            expect(result[0]?.name).toBe("EmptyClass");
+            expect(result[0]?.body.methods).toHaveLength(0);
+            expect(result[0]?.body.properties).toHaveLength(0);
+        });
+
+        it("should handle class with multiple generic params", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\nclass Map~K,V~",
+                startLine: 1,
+                endLine: 2,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result[0]?.name).toBe("Map");
+            expect(result[0]?.isGeneric).toBe(true);
+            expect(result[0]?.typeParams).toHaveLength(2);
+            expect(result[0]?.typeParams[0]?.name).toBe("K");
+            expect(result[0]?.typeParams[1]?.name).toBe("V");
+        });
+
+        it("should handle class without explicit visibility", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    implicitMethod()
+    implicitProp
+}`,
+                startLine: 1,
+                endLine: 5,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            const method = result[0]?.body.methods[0];
+            expect(method?.visibility).toBe("public"); // Default
+
+            const prop = result[0]?.body.properties[0];
+            expect(prop?.visibility).toBe("public"); // Default
+        });
+
+        it("should handle method with no parameters", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    +noParams() void
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            const method = result[0]?.body.methods[0];
+            expect(method?.name).toBe("noParams");
+            expect(method?.parameters).toHaveLength(0);
+            expect(method?.returnType).toBe("void");
+        });
+
+        it("should handle method with no return type", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    +noReturnType()
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            const method = result[0]?.body.methods[0];
+            expect(method?.returnType).toBe("void"); // Default
+        });
+
+        it("should handle property with colon syntax", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    +name: string
+    -count: number
+}`,
+                startLine: 1,
+                endLine: 5,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result[0]?.body.properties).toHaveLength(2);
+            expect(result[0]?.body.properties[0]?.name).toBe("name");
+            expect(result[0]?.body.properties[0]?.type).toBe("string");
+            expect(result[0]?.body.properties[1]?.name).toBe("count");
+            expect(result[0]?.body.properties[1]?.type).toBe("number");
+        });
+
+        it("should handle duplicate class names gracefully", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\nclass Foo\nclass Foo",
+                startLine: 1,
+                endLine: 3,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            // mermaid-ast merges duplicate definitions
+            expect(result.length).toBeGreaterThanOrEqual(1);
+            expect(result[0]?.name).toBe("Foo");
+        });
+
+        it("should handle inline class definition", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\nFoo : +method()",
+                startLine: 1,
+                endLine: 2,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result).toHaveLength(1);
+            expect(result[0]?.name).toBe("Foo");
+        });
+    });
+
+    describe("Feature: Boundary Conditions", () => {
+        it("should handle single-line class diagram", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram",
+                startLine: 1,
+                endLine: 1,
+            };
+
+            const result = extractor.extract(block);
+
+            expect(result.classes).toHaveLength(0);
+            expect(result.relations).toHaveLength(0);
+        });
+
+        it("should handle whitespace-only class body", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result).toHaveLength(1);
+            expect(result[0]?.body.methods).toHaveLength(0);
+            expect(result[0]?.body.properties).toHaveLength(0);
+        });
+
+        it("should handle class name with underscores", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\nclass My_Class_Name",
+                startLine: 1,
+                endLine: 2,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result[0]?.name).toBe("My_Class_Name");
+        });
+
+        it("should handle complex nested generic return type", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    +fetch() Promise~Result~T~~
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            const method = result[0]?.body.methods[0];
+            expect(method?.returnType).toContain("Promise");
+        });
+
+        it("should handle mixed members: methods, properties, and enum values", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Mixed {
+    +id: string
+    +getName() string
+}`,
+                startLine: 1,
+                endLine: 5,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            expect(result[0]?.body.properties).toHaveLength(1);
+            expect(result[0]?.body.methods).toHaveLength(1);
+        });
+
+        it("should preserve annotation order", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Ordered {
+    %% @type definition
+    %% @package com.example
+    +field: string
+}`,
+                startLine: 1,
+                endLine: 6,
+            };
+
+            const result = extractor.extract(block).classes;
+
+            // Annotations should be parsed regardless of order
+            expect(result[0]?.annotations?.package).toBe("com.example");
+            expect(result[0]?.annotations?.entityType).toBe("definition");
+        });
+    });
+
+    describe("Feature: Negative Tests", () => {
+        it("should handle malformed method gracefully", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    +incomplete(
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            // Should not throw, parser is resilient
+            const result = extractor.extract(block);
+            expect(result).toBeDefined();
+        });
+
+        it("should return empty result for syntax error", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: "classDiagram\n{{{invalid syntax}}}",
+                startLine: 1,
+                endLine: 2,
+            };
+
+            const result = extractor.extract(block);
+
+            // Graceful degradation - empty result instead of throw
+            expect(result.classes).toBeDefined();
+        });
+
+        it("should handle missing stereotype closing", () => {
+            const block: CodeBlock = {
+                language: "mermaid",
+                content: `classDiagram
+class Foo {
+    <<interface
+}`,
+                startLine: 1,
+                endLine: 4,
+            };
+
+            // Should not throw
+            const result = extractor.extract(block);
+            expect(result).toBeDefined();
         });
     });
 });

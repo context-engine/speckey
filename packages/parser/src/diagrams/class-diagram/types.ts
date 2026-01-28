@@ -55,11 +55,18 @@ export interface ClassBody {
     enumValues: string[];
 }
 
+export interface Annotations {
+    package?: string;
+    entityType?: "definition" | "reference" | "external";
+    [key: string]: any;
+}
+
 export interface ParsedClass {
     name: string;
     isGeneric: boolean;
     typeParams: TypeParam[];
     stereotype: Stereotype;
+    annotations?: Annotations;
     body: ClassBody;
     namespace?: string;
     startLine?: number;

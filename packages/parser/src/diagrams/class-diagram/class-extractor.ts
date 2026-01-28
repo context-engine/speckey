@@ -1,4 +1,13 @@
 import type { CodeBlock } from "../../mermaid-extraction/types";
+import { parseClassDiagram } from "mermaid-ast";
+// Import main types directly from the library root, as seen in diagram-renderer
+import type {
+    ClassDiagramAST,
+    ClassDefinition,
+    ClassRelation,
+    Namespace
+} from "mermaid-ast";
+
 import type {
     ParsedClass,
     ParsedMethod,
@@ -12,331 +21,234 @@ import type {
     Stereotype,
     RelationType,
     ClassBody,
-    TypeParam,
+    TypeParam
 } from "./types";
+import { AnnotationParser } from "./annotation-handling";
 
 /**
  * Extracts class definitions, relationships, namespaces, and notes from Mermaid classDiagram blocks.
- *
- * ## Architecture Decision Record
- *
- * **Decision**: Use a manual regex-based parser instead of mermaid's JISON parser.
- *
- * **Context**: The architecture spec calls for using `mermaid.mermaidAPI.getDiagramFromText`
- * to access the internal `ClassDB`. However, mermaid v11+ requires a full browser DOM
- * environment (DOMPurify, window, document) that is difficult to polyfill in Node/Bun.
- *
- * **Consequences**:
- * - ✅ Works in Node/Bun without browser dependencies
- * - ✅ Simpler dependency graph
- * - ❌ May not handle all edge cases of mermaid syntax
- * - ❌ Requires maintenance as mermaid syntax evolves
- *
- * **TODO**: Migrate to mermaid's parser if they release a standalone package without DOM deps.
  */
 export class ClassExtractor {
-    /**
-     * Extracts all elements from a mermaid class diagram code block.
-     * @param block The mermaid code block to parse.
-     * @returns A complete ClassDiagramResult with classes, relations, namespaces, and notes.
-     */
+    private annotationParser = new AnnotationParser();
+
     public extract(block: CodeBlock): ClassDiagramResult {
         const content = block.content.trim();
 
-        // Check if this is a classDiagram
         if (!content.startsWith("classDiagram")) {
             return { classes: [], relations: [], namespaces: [], notes: [] };
         }
 
-        // Strip comments
-        const lines = content
-            .split("\n")
-            .map((l) => l.trim())
-            .filter((l) => !l.startsWith("%%"));
+        try {
+            const ast = parseClassDiagram(content);
+            return this.transformAST(ast, block.startLine, content);
+        } catch (error) {
+            console.error("Failed to parse class diagram:", error);
+            return { classes: [], relations: [], namespaces: [], notes: [] };
+        }
+    }
 
-        const classes = this.extractClasses(lines, block.startLine);
-        const relations = this.extractRelations(lines);
-        const namespaces = this.extractNamespaces(lines);
-        const notes = this.extractNotes(lines);
+    private transformAST(ast: ClassDiagramAST, startLineOffset: number, content: string): ClassDiagramResult {
+        const classes: ParsedClass[] = [];
+        const relations: ParsedRelation[] = [];
+        const namespaces: ParsedNamespace[] = [];
+        const notes: ParsedNote[] = [];
+
+        // 1. Transform Classes
+        // mermaid-ast classes are in a Map
+        for (const [id, def] of ast.classes) {
+            classes.push(this.transformClass(def, startLineOffset, content));
+        }
+
+        // 2. Transform Relations
+        for (const rel of ast.relations) {
+            relations.push(this.transformRelation(rel));
+        }
+
+        // 3. Transform Namespaces
+        for (const [name, ns] of ast.namespaces) {
+            namespaces.push(this.transformNamespace(name, ns));
+            // Assign namespace to classes
+            for (const classId of ns.classes) {
+                const cls = classes.find(c => c.name === classId || c.name === classId.split('~')[0]);
+                if (cls) cls.namespace = name;
+            }
+        }
+
+        // 4. Transform Notes
+        for (const note of ast.notes) {
+            notes.push({
+                text: note.text.replace(/<br\s*\/?>/gi, "\n"),
+                forClass: note.forClass
+            });
+        }
 
         return { classes, relations, namespaces, notes };
     }
 
-    /**
-     * Legacy method for backward compatibility.
-     */
-    public extractClasses(block: CodeBlock): ParsedClass[];
-    public extractClasses(lines: string[], startLine: number): ParsedClass[];
-    public extractClasses(
-        blockOrLines: CodeBlock | string[],
-        startLine?: number
-    ): ParsedClass[] {
-        if (Array.isArray(blockOrLines)) {
-            return this.parseClasses(blockOrLines, startLine ?? 1);
+    private transformClass(def: ClassDefinition, startLineOffset: number, content: string): ParsedClass {
+        // Debugging stereotypes
+        // console.log(`[ClassExtractor] Parsing class ${def.id}:`, JSON.stringify(def));
+
+        const { name, isGeneric, typeParams } = this.parseClassName(def.id, def.label);
+
+        const body: ClassBody = {
+            methods: [],
+            properties: [],
+            enumValues: []
+        };
+
+        let stereotype: Stereotype = "class";
+
+        // Annotations
+        // Annotations
+        if (def.annotations && def.annotations.length > 0) {
+            stereotype = this.mapStereotype(def.annotations[0]!);
         }
-        const block = blockOrLines;
-        const content = block.content.trim();
-        if (!content.startsWith("classDiagram")) {
-            return [];
+
+        if (def.members) {
+            for (const member of def.members) {
+                // Check if member is a stereotype definition (e.g. <<interface>>)
+                // mermaid-ast 0.8.2 might parse it as a member with variable text
+                const m = member as any;
+                const text = m.text?.trim() || m.title?.trim() || "";
+                const stereoMatch = text.match(/^<<(.+)>>$/);
+                if (stereoMatch && stereoMatch[1]) {
+                    stereotype = this.mapStereotype(stereoMatch[1]);
+                } else {
+                    this.parseMember(member, body, stereotype);
+                }
+            }
         }
-        const lines = content
-            .split("\n")
-            .map((l) => l.trim())
-            .filter((l) => !l.startsWith("%%"));
-        return this.parseClasses(lines, block.startLine);
+
+        const { startLine, endLine } = this.findClassLineNumbers(def.id, content, startLineOffset);
+
+        // Extract comments from the class body lines
+        const classLines = content.split('\n').slice(startLine, endLine + 1);
+        const comments = classLines
+            .map(line => line.trim())
+            .filter(line => line.startsWith("%%"));
+
+        // console.log(`[ClassExtractor] ${def.id} Lines: ${startLine}-${endLine}`);
+        // console.log(`[ClassExtractor] ${def.id} Comments:`, comments);
+
+        const annotationsResult = this.annotationParser.parseAnnotations(comments);
+
+        return {
+            name,
+            isGeneric,
+            typeParams,
+            stereotype,
+            body,
+            annotations: annotationsResult,
+            startLine,
+            endLine
+        };
     }
 
-    private parseClasses(lines: string[], blockStartLine: number): ParsedClass[] {
-        const results: ParsedClass[] = [];
-        let currentClass: ParsedClass | null = null;
-        let currentClassStartLine = 0;
-        let inClassBody = false;
-        let currentNamespace: string | undefined = undefined;
-        let inNamespaceBody = false;
-        let pendingStereotype: Stereotype | null = null; // Track stereotype before class
+    private findClassLineNumbers(classId: string, content: string, startLineOffset: number): { startLine: number, endLine: number } {
+        const lines = content.split('\n');
+        let startLine = 0;
+        let endLine = 0;
+        let found = false;
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            if (!line) continue;
+            // Match "class ClassId" or "class ClassId{" or "ClassId :"
+            // A simple includes might match "User" in "UserService", so be careful.
+            // But strict regex is complex. Let's try to be slightly more specific if possible, 
+            // or rely on the previous heuristic if adequate for now.
+            // Previous heuristic: line && line.includes(classId)
 
-            // Check for namespace start
-            const namespaceMatch = line.match(/^namespace\s+(\S+)\s*\{?$/);
-            if (namespaceMatch && namespaceMatch[1]) {
-                currentNamespace = namespaceMatch[1];
-                inNamespaceBody = line.endsWith("{");
-                continue;
-            }
+            if (line && line.includes(classId) && !found) {
+                // Potential detection of class start
+                // Check if it's really the class definition (starts with class or has curlies or :)
+                if (line.trim().startsWith("class ") || line.includes("{") || line.includes(":")) {
+                    startLine = startLineOffset + i;
+                    endLine = startLine;
+                    found = true;
 
-            // Check for namespace end
-            if (line === "}" && inNamespaceBody && !inClassBody) {
-                currentNamespace = undefined;
-                inNamespaceBody = false;
-                continue;
-            }
+                    // Check for block start
+                    let openBraces = (line.match(/{/g) || []).length;
+                    let closeBraces = (line.match(/}/g) || []).length;
+                    let balance = openBraces - closeBraces;
 
-            // Check for stereotype annotation (before or after class)
-            if (line.startsWith("<<") && line.endsWith(">>")) {
-                const stereotype = line.slice(2, -2).toLowerCase();
-                const mappedStereotype = this.mapStereotype(stereotype);
-                if (currentClass) {
-                    // Apply to current class
-                    currentClass.stereotype = mappedStereotype;
-                } else {
-                    // Store for next class
-                    pendingStereotype = mappedStereotype;
-                }
-                continue;
-            }
+                    if (balance > 0) {
+                        // Scan forward for closing brace
+                        for (let j = i + 1; j < lines.length; j++) {
+                            const nextLine = lines[j];
+                            if (!nextLine) continue;
+                            const open = (nextLine.match(/{/g) || []).length;
+                            const close = (nextLine.match(/}/g) || []).length;
+                            balance += open - close;
 
-            // Check for class declaration
-            const classMatch = line.match(/^class\s+([^{]+?)\s*(\{)?$/);
-            if (classMatch && classMatch[1]) {
-                if (currentClass) {
-                    currentClass.endLine = blockStartLine + i - 1;
-                    results.push(currentClass);
-                }
-
-                const rawName = classMatch[1].trim();
-                const nameInfo = this.parseClassName(rawName);
-                currentClassStartLine = blockStartLine + i + 1;
-
-                currentClass = {
-                    name: nameInfo.name,
-                    isGeneric: nameInfo.isGeneric,
-                    typeParams: nameInfo.typeParams,
-                    stereotype: pendingStereotype || "class", // Use pending or default
-                    body: { methods: [], properties: [], enumValues: [] },
-                    namespace: currentNamespace,
-                    startLine: currentClassStartLine,
-                    endLine: currentClassStartLine,
-                };
-
-                pendingStereotype = null; // Reset after use
-
-                inClassBody = !!classMatch[2];
-                continue;
-            }
-
-            // Check for closing brace
-            if (line === "}" && currentClass && inClassBody) {
-                currentClass.endLine = blockStartLine + i;
-                results.push(currentClass);
-                currentClass = null;
-                inClassBody = false;
-                continue;
-            }
-
-
-
-            // Parse members if we're inside a class body
-            if (currentClass && inClassBody) {
-                this.parseMember(line, currentClass.body, currentClass.stereotype);
-            }
-        }
-
-        // Push the last class
-        if (currentClass) {
-            if (!currentClass.endLine) {
-                currentClass.endLine = blockStartLine + lines.length - 1;
-            }
-            results.push(currentClass);
-        }
-
-        return results;
-    }
-
-    private extractRelations(lines: string[]): ParsedRelation[] {
-        const relations: ParsedRelation[] = [];
-
-        // Relation patterns (order matters - more specific first)
-        const relationPatterns = [
-            { regex: /<\|--/, type: "inheritance" as RelationType },
-            { regex: /\*--/, type: "composition" as RelationType },
-            { regex: /o--/, type: "aggregation" as RelationType },
-            { regex: /-->/, type: "association" as RelationType },
-            { regex: /\.\.\|>/, type: "realization" as RelationType },
-            { regex: /\.\.>/, type: "dependency" as RelationType },
-            { regex: /\.\./, type: "dashed" as RelationType },
-            { regex: /\(\)--/, type: "lollipop" as RelationType },
-            { regex: /--\(\)/, type: "lollipop" as RelationType },
-            { regex: /--/, type: "link" as RelationType }, // Must be after lollipop
-        ];
-
-        for (const line of lines) {
-            if (
-                line.startsWith("class ") ||
-                line.startsWith("namespace ") ||
-                line.startsWith("note ")
-            ) {
-                continue;
-            }
-
-            for (const pattern of relationPatterns) {
-                if (pattern.regex.test(line)) {
-                    const relation = this.parseRelationLine(line, pattern.type);
-                    if (relation) {
-                        relations.push(relation);
-                    }
-                    break;
-                }
-            }
-        }
-
-        return relations;
-    }
-
-    private parseRelationLine(
-        line: string,
-        type: RelationType
-    ): ParsedRelation | null {
-        // Handle cardinality: ClassA "1" --> "*" ClassB : label
-        const cardinalityMatch = line.match(
-            /^(\S+)\s*"([^"]+)"\s*[<>|.*o()-]+\s*"([^"]+)"\s*(\S+)(?:\s*:\s*(.+))?$/
-        );
-        if (
-            cardinalityMatch &&
-            cardinalityMatch[1] &&
-            cardinalityMatch[4]
-        ) {
-            return {
-                sourceClass: cardinalityMatch[1],
-                targetClass: cardinalityMatch[4],
-                type,
-                sourceCardinality: cardinalityMatch[2],
-                targetCardinality: cardinalityMatch[3],
-                label: cardinalityMatch[5]?.trim(),
-            };
-        }
-
-        // Handle simple: ClassA --> ClassB : label
-        const simpleMatch = line.match(
-            /^(\S+)\s*[<>|.*o()-]+\s*(\S+)(?:\s*:\s*(.+))?$/
-        );
-        if (simpleMatch && simpleMatch[1] && simpleMatch[2]) {
-            return {
-                sourceClass: simpleMatch[1],
-                targetClass: simpleMatch[2],
-                type,
-                label: simpleMatch[3]?.trim(),
-            };
-        }
-
-        return null;
-    }
-
-    private extractNamespaces(lines: string[]): ParsedNamespace[] {
-        const namespaces: ParsedNamespace[] = [];
-        let currentNamespace: ParsedNamespace | null = null;
-        let braceDepth = 0;
-
-        for (const line of lines) {
-            const namespaceMatch = line.match(/^namespace\s+(\S+)\s*\{?$/);
-            if (namespaceMatch && namespaceMatch[1]) {
-                currentNamespace = { name: namespaceMatch[1], classes: [] };
-                if (line.endsWith("{")) {
-                    braceDepth = 1;
-                }
-                continue;
-            }
-
-            if (currentNamespace) {
-                if (line === "{") {
-                    braceDepth++;
-                } else if (line === "}") {
-                    braceDepth--;
-                    if (braceDepth === 0) {
-                        namespaces.push(currentNamespace);
-                        currentNamespace = null;
-                    }
-                } else {
-                    const classMatch = line.match(/^class\s+([^{]+?)(\s*\{)?$/);
-                    if (classMatch && classMatch[1]) {
-                        const rawName = classMatch[1].trim();
-                        const nameInfo = this.parseClassName(rawName);
-                        currentNamespace.classes.push(nameInfo.name);
-                        // If class has opening brace on same line, track it
-                        if (classMatch[2]) {
-                            braceDepth++;
+                            if (balance <= 0) {
+                                endLine = startLineOffset + j;
+                                break;
+                            }
                         }
+                    } else if (openBraces > 0 && balance === 0) {
+                        // Opened and closed on same line (empty class?)
+                        endLine = startLineOffset + i;
                     }
                 }
             }
         }
 
-        return namespaces;
+        return { startLine, endLine };
     }
 
-    private extractNotes(lines: string[]): ParsedNote[] {
-        const notes: ParsedNote[] = [];
+    private transformRelation(rel: ClassRelation): ParsedRelation {
+        let type: RelationType = "association";
 
-        for (const line of lines) {
-            // note for ClassName "text"
-            const noteForMatch = line.match(/^note\s+for\s+(\S+)\s+"([^"]+)"$/);
-            if (noteForMatch && noteForMatch[1] && noteForMatch[2]) {
-                notes.push({
-                    text: noteForMatch[2].replace(/\\n/g, "\n"),
-                    forClass: noteForMatch[1],
-                });
-                continue;
-            }
+        // mermaid-ast structure:
+        // id1, id2, relation: { type1, type2, lineType }, relationTitle1, relationTitle2, title
+        if (!rel.relation) {
+            return {
+                sourceClass: rel.id1,
+                targetClass: rel.id2,
+                type: "association",
+                label: rel.title,
+                sourceCardinality: rel.relationTitle1,
+                targetCardinality: rel.relationTitle2
+            };
+        }
+        const { type1, type2, lineType } = rel.relation;
 
-            // note "text"
-            const noteMatch = line.match(/^note\s+"([^"]+)"$/);
-            if (noteMatch && noteMatch[1]) {
-                notes.push({
-                    text: noteMatch[1].replace(/\\n/g, "\n"),
-                });
-            }
+        if (type1 === 'extension' || type2 === 'extension') {
+            type = "inheritance";
+        } else if (type1 === 'composition' || type2 === 'composition') {
+            type = "composition";
+        } else if (type1 === 'aggregation' || type2 === 'aggregation') {
+            type = "aggregation";
+        } else if (type1 === 'lollipop' || type2 === 'lollipop') {
+            type = "lollipop";
+        } else if (lineType === 'dotted') {
+            type = "dependency";
+        } else if (lineType === 'solid') {
+            type = "association"; // Default to association for solid lines
+            if (type1 === 'none' && type2 === 'none') type = "link";
         }
 
-        return notes;
+        return {
+            sourceClass: rel.id1,
+            targetClass: rel.id2,
+            type,
+            label: rel.title,
+            sourceCardinality: rel.relationTitle1,
+            targetCardinality: rel.relationTitle2
+        };
     }
 
-    private parseClassName(raw: string): {
-        name: string;
-        isGeneric: boolean;
-        typeParams: TypeParam[];
-    } {
+    private transformNamespace(name: string, ns: Namespace): ParsedNamespace {
+        return {
+            name: name,
+            classes: ns.classes
+        };
+    }
+
+    private parseClassName(id: string, label?: string): { name: string, isGeneric: boolean, typeParams: TypeParam[] } {
+        const raw = label || id;
+
         const match = raw.match(/^(.+?)~(.+)~$/);
         if (match && match[1] && match[2]) {
             const name = match[1].trim();
@@ -362,188 +274,82 @@ export class ClassExtractor {
         return { name: raw, isGeneric: false, typeParams: [] };
     }
 
-    private mapStereotype(stereotype: string): Stereotype {
-        switch (stereotype) {
-            case "interface":
-                return "interface";
-            case "abstract":
-                return "abstract";
+    private mapStereotype(annotation: string): Stereotype {
+        const clean = annotation.toLowerCase().replace(/<|>/g, '');
+        switch (clean) {
+            case "interface": return "interface";
+            case "abstract": return "abstract";
             case "enumeration":
-            case "enum":
-                return "enum";
-            case "service":
-                return "service";
-            case "entity":
-                return "entity";
-            default:
-                return "class";
+            case "enum": return "enum";
+            case "service": return "service";
+            case "entity": return "entity";
+            default: return "class";
         }
     }
 
-    private parseMember(
-        line: string,
-        body: ClassBody,
-        stereotype: Stereotype
-    ): void {
-        if (!line || line === "{" || line === "}") return;
+    // Use 'any' for member temporarily to bypass strict type check if interface mismatches, 
+    // but try to cast to expected shape.
+    private parseMember(member: any, body: ClassBody, stereotype: Stereotype): void {
+        // ClassMember in 0.8.2: { text: string, visibility: string, type: 'method'|'attribute' }
+        const text = member.text?.trim() || member.title?.trim() || "";
+        const visibility = this.mapVisibility(member.visibility || member.accessibility);
 
-        const visibilityChar = line[0] ?? "";
-        let visibility: Visibility = "public";
-        let memberLine = line;
+        const isStatic = text.endsWith("$") || member.isStatic;
+        const isAbstract = text.endsWith("*") || member.isAbstract;
 
-        if (["+", "-", "#", "~"].includes(visibilityChar)) {
-            visibility = this.mapVisibility(visibilityChar);
-            memberLine = line.slice(1).trim();
-        }
+        let localText = text;
+        if (localText.endsWith("$")) localText = localText.slice(0, -1).trim();
+        if (localText.endsWith("*")) localText = localText.slice(0, -1).trim();
 
-        // Check if it's a method (contains parentheses)
-        if (memberLine.includes("(")) {
-            const method = this.parseMethod(memberLine, visibility);
-            body.methods.push(method);
-        } else if (stereotype === "enum" && !memberLine.includes(" ")) {
-            body.enumValues.push(memberLine);
+        if (localText.includes("(") || localText.endsWith(")")) {
+            const parsedMethod = this.parseMethodSignature(localText, visibility, !!isStatic, !!isAbstract);
+            body.methods.push(parsedMethod);
+        } else if (stereotype === "enum") {
+            body.enumValues.push(localText);
         } else {
-            const property = this.parseProperty(memberLine, visibility);
-            body.properties.push(property);
+            const parsedProp = this.parsePropertySignature(localText, visibility, !!isStatic);
+            body.properties.push(parsedProp);
         }
     }
 
-    private mapVisibility(char: string): Visibility {
-        switch (char) {
-            case "+":
-                return "public";
-            case "-":
-                return "private";
-            case "#":
-                return "protected";
-            case "~":
-                return "package";
-            default:
-                return "public";
+    private mapVisibility(acc?: string): Visibility {
+        switch (acc) {
+            case "+": return "public";
+            case "-": return "private";
+            case "#": return "protected";
+            case "~": return "package";
+            default: return "public";
         }
     }
 
-    private parseMethod(line: string, visibility: Visibility): ParsedMethod {
-        let text = line;
-        let isAbstract = false;
-        let isStatic = false;
-
-        // Check for abstract marker (*)
-        if (text.endsWith("*")) {
-            isAbstract = true;
-            text = text.slice(0, -1).trim();
-        }
-
-        // Check for static marker ($)
-        if (text.endsWith("$")) {
-            isStatic = true;
-            text = text.slice(0, -1).trim();
-        }
-
+    private parseMethodSignature(text: string, visibility: Visibility, isStatic: boolean, isAbstract: boolean): ParsedMethod {
         const match = text.match(/^([\w]+)\s*\(([^)]*)\)\s*(.*)$/);
         if (match && match[1]) {
             const name = match[1];
             const paramsStr = match[2] ?? "";
             let returnType = (match[3] ?? "").trim() || "void";
 
-            // Check for static/abstract in return type position
-            if (returnType.endsWith("*")) {
-                isAbstract = true;
-                returnType = returnType.slice(0, -1).trim() || "void";
-            }
-            if (returnType.endsWith("$")) {
-                isStatic = true;
-                returnType = returnType.slice(0, -1).trim() || "void";
-            }
-
-            returnType = this.normalizeType(returnType);
-            const parameters = this.parseParameters(paramsStr);
-
-            return { name, visibility, parameters, returnType, isAbstract, isStatic };
+            return {
+                name,
+                visibility,
+                parameters: this.parseParameters(paramsStr),
+                returnType: this.normalizeType(returnType),
+                isAbstract,
+                isStatic
+            };
         }
-
-        return {
-            name: text,
-            visibility,
-            parameters: [],
-            returnType: "void",
-            isAbstract,
-            isStatic,
-        };
+        return { name: text, visibility, parameters: [], returnType: "void", isAbstract, isStatic };
     }
 
-    private parseParameters(paramsStr: string): ParsedParameter[] {
-        if (!paramsStr.trim()) return [];
-        const parts = paramsStr.split(",").map((s) => s.trim());
-        return parts.map((p) => this.parseParameter(p));
-    }
-
-    private parseParameter(p: string): ParsedParameter {
-        let name = p;
-        let type = "any";
-        let optional = false;
-        let defaultValue: string | undefined = undefined;
-
-        // Check for default value: "count: int = 10"
-        if (p.includes("=")) {
-            const splitParts = p.split("=").map((s) => s.trim());
-            name = splitParts[0] ?? p;
-            defaultValue = splitParts[1];
-        }
-
-        // Check for colon separator: "name: type" or "opts?: Options"
-        if (name.includes(":")) {
-            const colonParts = name.split(":").map((s) => s.trim());
-            name = colonParts[0] ?? name;
-            type = colonParts[1] ?? "any";
-        } else {
-            // Space separator: "int bar" or "List~T~ items"
-            const spaceMatch = name.match(/^(.+?)\s+(\S+)$/);
-            if (spaceMatch && spaceMatch[1] && spaceMatch[2]) {
-                type = spaceMatch[1];
-                name = spaceMatch[2];
-            }
-        }
-
-        // Check for optional marker
-        if (name.endsWith("?")) {
-            optional = true;
-            name = name.slice(0, -1);
-        }
-
-        // Normalize type (convert ~T~ to <T>)
-        type = this.normalizeType(type);
-
-        return {
-            name,
-            type,
-            optional,
-            defaultValue,
-            isGeneric: type.includes("<"),
-            typeVar: undefined,
-        };
-    }
-
-    private parseProperty(line: string, visibility: Visibility): ParsedProperty {
-        let text = line;
-        let isStatic = false;
-
-        // Check for static marker ($)
-        if (text.endsWith("$")) {
-            isStatic = true;
-            text = text.slice(0, -1).trim();
-        }
-
+    private parsePropertySignature(text: string, visibility: Visibility, isStatic: boolean): ParsedProperty {
         let name = text;
         let type = "any";
 
-        // Check for colon separator: "name: type"
         if (name.includes(":")) {
-            const colonParts = name.split(":").map((s) => s.trim());
-            name = colonParts[0] ?? name;
-            type = colonParts[1] ?? "any";
+            const parts = name.split(":");
+            name = parts[0] ? parts[0].trim() : name;
+            type = parts[1] ? parts[1].trim() : "any";
         } else {
-            // Space separator: "string name" or "List~String~ names"
             const spaceMatch = name.match(/^(.+?)\s+(\S+)$/);
             if (spaceMatch && spaceMatch[1] && spaceMatch[2]) {
                 type = spaceMatch[1];
@@ -554,8 +360,54 @@ export class ClassExtractor {
         return { name, visibility, type: this.normalizeType(type), isStatic };
     }
 
+    private parseParameters(paramsStr: string): ParsedParameter[] {
+        if (!paramsStr.trim()) return [];
+        return paramsStr.split(",").map(p => this.parseParameter(p.trim()));
+    }
+
+    private parseParameter(p: string): ParsedParameter {
+        let text = p;
+        let defaultValue: string | undefined;
+
+        // Extract default value
+        if (text.includes("=")) {
+            const parts = text.split("=");
+            text = parts[0] ? parts[0].trim() : text;
+            defaultValue = parts[1] ? parts[1].trim() : undefined;
+        }
+
+        let name = text;
+        let type = "any";
+
+        if (text.includes(":")) {
+            const parts = text.split(":");
+            name = parts[0] ? parts[0].trim() : text;
+            type = parts[1] ? parts[1].trim() : "any";
+        } else {
+            const spaceMatch = text.match(/^(.+?)\s+(\S+)$/);
+            if (spaceMatch && spaceMatch[1] && spaceMatch[2]) {
+                type = spaceMatch[1];
+                name = spaceMatch[2];
+            }
+        }
+
+        // Check optional
+        let optional = false;
+        if (name.endsWith("?")) {
+            optional = true;
+            name = name.slice(0, -1);
+        }
+
+        return {
+            name,
+            type: this.normalizeType(type),
+            optional,
+            defaultValue,
+            isGeneric: type.includes("<")
+        };
+    }
+
     private normalizeType(type: string): string {
-        // Convert List~T~ to List<T>
         return type.replace(/~(.+?)~/g, "<$1>");
     }
 }
