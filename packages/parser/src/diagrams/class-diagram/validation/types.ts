@@ -30,16 +30,15 @@ export interface ValidationError {
     code: ErrorCode;
     message: string;
     className: string;
-    line?: number;
-    severity: Severity.ERROR;
+    line: number;
+    severity: Severity;
 }
 
 export interface ValidationWarning {
     code: WarningCode;
     message: string;
     className: string;
-    line?: number;
-    severity?: Severity.WARNING;
+    line: number;
 }
 
 export interface SkippedClass {
@@ -54,4 +53,48 @@ export interface ValidationReport {
     warnings: ValidationWarning[];
     validClasses: ParsedClass[];
     skippedClasses: SkippedClass[];
+}
+
+// --- Intermediate Result Types (per spec) ---
+
+/**
+ * Result of validating a single class through all validation steps.
+ */
+export interface ClassValidationResult {
+    isValid: boolean;
+    errors: ValidationError[];
+    warnings: ValidationWarning[];
+    cls: ParsedClass;
+}
+
+/**
+ * Result of annotation validation (@package, @type).
+ */
+export interface AnnotationValidationResult {
+    isValid: boolean;
+    errors: ValidationError[];
+}
+
+/**
+ * Result of stereotype constraint validation.
+ */
+export interface StereotypeValidationResult {
+    isValid: boolean;
+    errors: ValidationError[];
+    warnings: ValidationWarning[];
+}
+
+/**
+ * Result of duplicate class detection.
+ */
+export interface DuplicateCheckResult {
+    duplicates: Array<{ name: string; indices: number[] }>;
+    errors: ValidationError[];
+}
+
+/**
+ * Result of self-reference detection in relations.
+ */
+export interface SelfReferenceResult {
+    warnings: ValidationWarning[];
 }

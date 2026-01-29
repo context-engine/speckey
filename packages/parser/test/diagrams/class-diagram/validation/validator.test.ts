@@ -1,4 +1,3 @@
-
 import { describe, it, expect, beforeEach } from "bun:test";
 import { ClassDiagramValidator } from "../../../../src/diagrams/class-diagram/validation/validator";
 import { ErrorCode, WarningCode, Severity } from "../../../../src/diagrams/class-diagram/validation/types";
@@ -57,6 +56,7 @@ describe("ClassDiagramValidator", () => {
 
             expect(result.isValid).toBe(false);
             expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_PACKAGE_FORMAT);
+            expect(result.errors[0]!.message).toMatch(/invalid/i);
             expect(result.skippedClasses).toHaveLength(1);
         });
 
@@ -66,6 +66,7 @@ describe("ClassDiagramValidator", () => {
 
             expect(result.isValid).toBe(false);
             expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_TYPE_VALUE);
+            expect(result.errors[0]!.message).toMatch(/definition.*reference.*external/i);
             expect(result.skippedClasses).toHaveLength(1);
         });
 
@@ -77,7 +78,6 @@ describe("ClassDiagramValidator", () => {
                     errors: ["Duplicate @package found"]
                 } as any
             });
-            // In our AnnotationParser architecture, duplicate annotations might be captured in an 'errors' array within Annotations object.
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
@@ -85,7 +85,6 @@ describe("ClassDiagramValidator", () => {
         });
 
         it("should skip class with duplicate @type", () => {
-            // Similar to duplicate package
             const cls = createClass({
                 annotations: {
                     package: "test.pkg",
@@ -157,6 +156,17 @@ describe("ClassDiagramValidator", () => {
             expect(result.isValid).toBe(true);
             expect(result.validClasses).toHaveLength(1);
         });
+
+        it("should pass external class without members", () => {
+            const cls = createClass({
+                annotations: { package: "test.pkg", entityType: "external" },
+                body: { methods: [], properties: [], enumValues: [] }
+            });
+            const result = validator.validate(createResult([cls]));
+            expect(result.isValid).toBe(true);
+            expect(result.validClasses).toHaveLength(1);
+            expect(result.errors).toHaveLength(0);
+        });
     });
 
     describe("Stereotype Constraint Validation", () => {
@@ -214,8 +224,7 @@ describe("ClassDiagramValidator", () => {
             expect(result.warnings).toHaveLength(0);
         });
 
-        it("should warn on unknown stereotype", () => {
-            // Add member to avoid EMPTY_DEFINITION warning
+        it("should warn on unknown stereotype and treat as class", () => {
             const cls = createClass({
                 stereotype: "random" as any,
                 body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] }
@@ -223,6 +232,9 @@ describe("ClassDiagramValidator", () => {
             const result = validator.validate(createResult([cls]));
 
             expect(result.warnings[0]!.code).toBe(WarningCode.UNKNOWN_STEREOTYPE);
+            // Class should still be valid (treated as "class" stereotype)
+            expect(result.isValid).toBe(true);
+            expect(result.validClasses).toHaveLength(1);
         });
     });
 
@@ -248,7 +260,6 @@ describe("ClassDiagramValidator", () => {
         });
 
         it("should warn on self-reference relation", () => {
-            // Add member to avoid EMPTY_DEFINITION warning
             const cls = createClass({
                 name: "Foo",
                 body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] }
@@ -281,7 +292,7 @@ describe("ClassDiagramValidator", () => {
             expect(result.errors[0]!.line).toBe(10);
         });
 
-        it("should include severity in all issues", () => {
+        it("should include severity in errors", () => {
             const cls = createClass({ annotations: { entityType: "definition" } });
             const result = validator.validate(createResult([cls]));
             expect(result.errors[0]!.severity).toBe(Severity.ERROR);
@@ -297,7 +308,6 @@ describe("ClassDiagramValidator", () => {
         });
 
         it("should collect multiple errors for one class", () => {
-            // Missing annotations + enum with methods
             const cls = createClass({
                 annotations: {},
                 stereotype: "enum",
@@ -306,7 +316,6 @@ describe("ClassDiagramValidator", () => {
             const result = validator.validate(createResult([cls]));
 
             expect(result.errors.length).toBeGreaterThanOrEqual(2);
-            // Should report missing package, missing type, enum has methods...
             const codes = result.errors.map(e => e.code);
             expect(codes).toContain(ErrorCode.MISSING_PACKAGE);
             expect(codes).toContain(ErrorCode.ENUM_HAS_METHODS);
@@ -325,13 +334,6 @@ describe("ClassDiagramValidator", () => {
         });
 
         it("should check annotations before stereotypes", () => {
-            // If a class fails annotation validation (e.g. missing package), we might skip stereotype validation logic on it?
-            // Or at least, ensure we don't crash if stereotype logic runs on invalid class.
-            // This test asserts that a class with missing package (annotation error) AND invalid stereotype usage (if checked)
-            // reports the annotation error. It might also report stereotype error, but order implies we catch the blocker first.
-            // Actually, the spec says "skippedClasses" for critical errors. 
-            // If annotation fails, it's skipped. Stereotype error might also cause skip.
-            // Let's passed a class with BOTH errors and ensure MISSING_PACKAGE is present.
             const cls = createClass({
                 annotations: { entityType: "definition" }, // Missing Package
                 stereotype: "enum",
@@ -339,11 +341,179 @@ describe("ClassDiagramValidator", () => {
             });
 
             const result = validator.validate(createResult([cls]));
-
-            // If implementation stops at first blocker, we see MISSING_PACKAGE.
-            // If it collects all, we see both.
-            // The requirement is that we detect the annotation error.
             expect(result.errors.map(e => e.code)).toContain(ErrorCode.MISSING_PACKAGE);
+        });
+    });
+
+    // --- New tests for pure function methods ---
+
+    describe("validateClass (pure function)", () => {
+        it("should return ClassValidationResult with isValid true for valid class", () => {
+            const cls = createClass();
+            const result = validator.validateClass(cls);
+
+            expect(result.isValid).toBe(true);
+            expect(result.errors).toHaveLength(0);
+            expect(result.cls).toBe(cls);
+        });
+
+        it("should return ClassValidationResult with isValid false for invalid class", () => {
+            const cls = createClass({ annotations: {} });
+            const result = validator.validateClass(cls);
+
+            expect(result.isValid).toBe(false);
+            expect(result.errors.length).toBeGreaterThan(0);
+            expect(result.cls).toBe(cls);
+        });
+
+        it("should aggregate errors from annotation and stereotype validation", () => {
+            const cls = createClass({
+                annotations: { entityType: "definition" }, // Missing package
+                stereotype: "enum",
+                body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
+            });
+            const result = validator.validateClass(cls);
+
+            const codes = result.errors.map(e => e.code);
+            expect(codes).toContain(ErrorCode.MISSING_PACKAGE);
+            expect(codes).toContain(ErrorCode.ENUM_HAS_METHODS);
+        });
+    });
+
+    describe("validateAnnotations (pure function)", () => {
+        it("should return AnnotationValidationResult for valid annotations", () => {
+            const cls = createClass();
+            const result = validator.validateAnnotations(cls);
+
+            expect(result.isValid).toBe(true);
+            expect(result.errors).toHaveLength(0);
+        });
+
+        it("should detect missing @package", () => {
+            const cls = createClass({ annotations: { entityType: "definition" } });
+            const result = validator.validateAnnotations(cls);
+
+            expect(result.isValid).toBe(false);
+            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_PACKAGE);
+        });
+
+        it("should detect missing @type", () => {
+            const cls = createClass({ annotations: { package: "test.pkg" } });
+            const result = validator.validateAnnotations(cls);
+
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.code === ErrorCode.MISSING_TYPE)).toBe(true);
+        });
+
+        it("should detect invalid package format", () => {
+            const cls = createClass({ annotations: { package: "a/b", entityType: "definition" } });
+            const result = validator.validateAnnotations(cls);
+
+            expect(result.isValid).toBe(false);
+            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_PACKAGE_FORMAT);
+        });
+    });
+
+    describe("validateStereotype (pure function)", () => {
+        it("should return StereotypeValidationResult for valid stereotype", () => {
+            const cls = createClass({ body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] } });
+            const result = validator.validateStereotype(cls);
+
+            expect(result.isValid).toBe(true);
+            expect(result.errors).toHaveLength(0);
+            expect(result.warnings).toHaveLength(0);
+        });
+
+        it("should detect reference with members", () => {
+            const cls = createClass({
+                annotations: { package: "test", entityType: "reference" },
+                body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
+            });
+            const result = validator.validateStereotype(cls);
+
+            expect(result.isValid).toBe(false);
+            expect(result.errors[0]!.code).toBe(ErrorCode.REFERENCE_HAS_MEMBERS);
+        });
+
+        it("should warn on empty definition", () => {
+            const cls = createClass({
+                annotations: { package: "test", entityType: "definition" },
+                body: { methods: [], properties: [], enumValues: [] }
+            });
+            const result = validator.validateStereotype(cls);
+
+            expect(result.isValid).toBe(true);
+            expect(result.warnings[0]!.code).toBe(WarningCode.EMPTY_DEFINITION);
+        });
+    });
+
+    describe("checkDuplicates (pure function)", () => {
+        it("should return empty result for no duplicates", () => {
+            const classes = [createClass({ name: "A" }), createClass({ name: "B" })];
+            const result = validator.checkDuplicates(classes);
+
+            expect(result.duplicates).toHaveLength(0);
+            expect(result.errors).toHaveLength(0);
+        });
+
+        it("should detect duplicates in same namespace", () => {
+            const classes = [createClass({ name: "Foo" }), createClass({ name: "Foo" })];
+            const result = validator.checkDuplicates(classes);
+
+            expect(result.duplicates).toHaveLength(1);
+            expect(result.duplicates[0]!.name).toBe("Foo");
+            expect(result.duplicates[0]!.indices).toEqual([0, 1]);
+            expect(result.errors).toHaveLength(1);
+            expect(result.errors[0]!.code).toBe(ErrorCode.DUPLICATE_CLASS);
+        });
+
+        it("should allow same name in different namespaces", () => {
+            const classes = [createClass({ name: "Foo", namespace: "A" }), createClass({ name: "Foo", namespace: "B" })];
+            const result = validator.checkDuplicates(classes);
+
+            expect(result.duplicates).toHaveLength(0);
+            expect(result.errors).toHaveLength(0);
+        });
+
+        it("should handle multiple duplicates", () => {
+            const classes = [
+                createClass({ name: "Foo" }),
+                createClass({ name: "Foo" }),
+                createClass({ name: "Foo" })
+            ];
+            const result = validator.checkDuplicates(classes);
+
+            expect(result.duplicates).toHaveLength(1);
+            expect(result.duplicates[0]!.indices).toEqual([0, 1, 2]);
+            expect(result.errors).toHaveLength(2); // Skip first, error on 2nd and 3rd
+        });
+    });
+
+    describe("checkSelfReferences (pure function)", () => {
+        it("should return empty for no self-references", () => {
+            const relations = [{ sourceClass: "A", targetClass: "B", type: "association" as const }];
+            const result = validator.checkSelfReferences(relations);
+
+            expect(result.warnings).toHaveLength(0);
+        });
+
+        it("should detect self-references", () => {
+            const relations = [{ sourceClass: "Foo", targetClass: "Foo", type: "association" as const }];
+            const result = validator.checkSelfReferences(relations);
+
+            expect(result.warnings).toHaveLength(1);
+            expect(result.warnings[0]!.code).toBe(WarningCode.SELF_REFERENCE);
+            expect(result.warnings[0]!.className).toBe("Foo");
+        });
+
+        it("should detect multiple self-references", () => {
+            const relations = [
+                { sourceClass: "A", targetClass: "A", type: "association" as const },
+                { sourceClass: "B", targetClass: "B", type: "dependency" as const }
+            ];
+            const result = validator.checkSelfReferences(relations);
+
+            expect(result.warnings).toHaveLength(2);
         });
     });
 });

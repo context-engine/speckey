@@ -1,177 +1,333 @@
-
-import type { ClassDiagramResult, ParsedClass } from "../types";
-import type { ValidationReport, ValidationError, ValidationWarning, SkippedClass } from "./types";
+import type { ClassDiagramResult, ParsedClass, ParsedRelation } from "../types";
+import type {
+    ValidationReport,
+    ValidationError,
+    ValidationWarning,
+    SkippedClass,
+    ClassValidationResult,
+    AnnotationValidationResult,
+    StereotypeValidationResult,
+    DuplicateCheckResult,
+    SelfReferenceResult
+} from "./types";
 import { ErrorCode, WarningCode, Severity } from "./types";
 
+/**
+ * Validates parsed class diagram entities against contract rules.
+ *
+ * Uses pure functions that return typed results for testability and composability.
+ */
 export class ClassDiagramValidator {
+    /**
+     * Validate all classes in a ClassDiagramResult and produce a ValidationReport.
+     */
     public validate(result: ClassDiagramResult): ValidationReport {
-        const report: ValidationReport = {
-            isValid: true,
-            errors: [],
-            warnings: [],
-            validClasses: [],
-            skippedClasses: []
-        };
+        // 1. Validate each class individually
+        const classResults = result.classes.map(cls => this.validateClass(cls));
 
-        const processedNames = new Map<string, string>(); // name -> namespace
+        // 2. Check for duplicates across all classes
+        const duplicateResult = this.checkDuplicates(result.classes);
 
-        for (const cls of result.classes) {
-            const classErrors: ValidationError[] = [];
-            const classWarnings: ValidationWarning[] = [];
+        // 3. Check for self-references in relations
+        const selfRefResult = this.checkSelfReferences(result.relations);
 
-            // 1. Annotation Validation
-            this.validateAnnotations(cls, classErrors);
-
-            // 2. Type Constraint Validation
-            this.validateTypeConstraints(cls, classErrors, classWarnings);
-
-            // 3. Stereotype Constraint Validation
-            this.validateStereotypes(cls, classErrors, classWarnings);
-
-            // 4. Duplicate Validation
-            this.validateDuplicates(cls, processedNames, classErrors);
-
-            // Decision: Valid or Skipped
-            if (classErrors.length > 0) {
-                report.errors.push(...classErrors);
-                report.warnings.push(...classWarnings); // Warnings are collected even if skipped? Spec says "Entity continues with flag" for warnings, but if errors exist, entity is skipped.
-                // We typically attach warnings to the report regardless.
-                report.skippedClasses.push({
-                    name: cls.name,
-                    reason: classErrors.map(e => e.message).join(", "),
-                    errors: classErrors
-                });
-            } else {
-                report.warnings.push(...classWarnings);
-                report.validClasses.push(cls);
-                // Track name for duplicate detection (only valid classes count? or all? usually all encountered)
-                // Duplicate detection logic above updated processedNames
-            }
-        }
-
-        // 5. Relations Validation (Self-reference)
-        this.validateRelations(result, report);
-
-        report.isValid = report.errors.length === 0;
-        return report;
+        // 4. Aggregate all results into final report
+        return this.aggregateResults(classResults, duplicateResult, selfRefResult);
     }
 
-    private validateAnnotations(cls: ParsedClass, errors: ValidationError[]): void {
+    /**
+     * Validate a single class through all validation steps.
+     * Pure function - no side effects.
+     */
+    public validateClass(cls: ParsedClass): ClassValidationResult {
+        const annotationResult = this.validateAnnotations(cls);
+        const stereotypeResult = this.validateStereotype(cls);
+
+        const allErrors = [...annotationResult.errors, ...stereotypeResult.errors];
+        const allWarnings = [...stereotypeResult.warnings];
+
+        return {
+            isValid: allErrors.length === 0,
+            errors: allErrors,
+            warnings: allWarnings,
+            cls
+        };
+    }
+
+    /**
+     * Validate @package and @type annotations.
+     * Pure function - returns AnnotationValidationResult.
+     */
+    public validateAnnotations(cls: ParsedClass): AnnotationValidationResult {
+        const errors: ValidationError[] = [];
         const annotations = cls.annotations || {};
 
-        // Duplicate checks (simulated based on errors array presence if parser supports it, or raw logic if we parsed)
-        // Since we receive ParsedClass, we check if 'errors' property exists in annotations (custom convention from our tests)
+        // Check for duplicate annotations (from AnnotationParser errors array)
         if (annotations.errors && Array.isArray(annotations.errors)) {
             for (const err of annotations.errors) {
                 if (err.includes("Duplicate @package")) {
-                    this.addError(errors, ErrorCode.DUPLICATE_PACKAGE, "Multiple @package annotations found", cls);
+                    errors.push(this.createError(ErrorCode.DUPLICATE_PACKAGE, "Multiple @package annotations found", cls));
                 }
                 if (err.includes("Duplicate @type")) {
-                    this.addError(errors, ErrorCode.DUPLICATE_TYPE, "Multiple @type annotations found", cls);
+                    errors.push(this.createError(ErrorCode.DUPLICATE_TYPE, "Multiple @type annotations found", cls));
                 }
             }
         }
 
+        // Check @package presence and format
         if (!annotations.package) {
-            this.addError(errors, ErrorCode.MISSING_PACKAGE, "Missing required annotation: @package", cls);
+            errors.push(this.createError(ErrorCode.MISSING_PACKAGE, "Missing required annotation: @package", cls));
         } else if (/[^a-zA-Z0-9_.]/.test(annotations.package)) {
-            this.addError(errors, ErrorCode.INVALID_PACKAGE_FORMAT, "Package contains invalid characters", cls);
+            errors.push(this.createError(ErrorCode.INVALID_PACKAGE_FORMAT, "Package contains invalid characters", cls));
         }
 
+        // Check @type presence and value
         if (!annotations.entityType) {
-            this.addError(errors, ErrorCode.MISSING_TYPE, "Missing required annotation: @type", cls);
+            errors.push(this.createError(ErrorCode.MISSING_TYPE, "Missing required annotation: @type", cls));
         } else {
             const validTypes = ["definition", "reference", "external"];
             if (!validTypes.includes(annotations.entityType)) {
-                this.addError(errors, ErrorCode.INVALID_TYPE_VALUE, `Invalid @type value: ${annotations.entityType}`, cls);
+                errors.push(this.createError(
+                    ErrorCode.INVALID_TYPE_VALUE,
+                    `Invalid @type value: ${annotations.entityType}. Valid values: ${validTypes.join(", ")}`,
+                    cls
+                ));
             }
         }
+
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
     }
 
-    private validateTypeConstraints(cls: ParsedClass, errors: ValidationError[], warnings: ValidationWarning[]): void {
-        const type = cls.annotations?.entityType;
+    /**
+     * Validate stereotype constraints and type constraints.
+     * Pure function - returns StereotypeValidationResult.
+     */
+    public validateStereotype(cls: ParsedClass): StereotypeValidationResult {
+        const errors: ValidationError[] = [];
+        const warnings: ValidationWarning[] = [];
+
+        const stereotype = cls.stereotype;
+        const entityType = cls.annotations?.entityType;
         const hasMembers = cls.body.methods.length > 0 || cls.body.properties.length > 0 || cls.body.enumValues.length > 0;
 
-        if (type === "reference" && hasMembers) {
-            this.addError(errors, ErrorCode.REFERENCE_HAS_MEMBERS, "Reference type cannot have members", cls);
+        // Type constraint: reference cannot have members
+        if (entityType === "reference" && hasMembers) {
+            errors.push(this.createError(ErrorCode.REFERENCE_HAS_MEMBERS, "Reference type cannot have members", cls));
         }
 
-        if (type === "definition" && !hasMembers) {
-            this.addWarning(warnings, WarningCode.EMPTY_DEFINITION, "Definition type has no members", cls);
+        // Type constraint: definition without members is a warning
+        if (entityType === "definition" && !hasMembers) {
+            warnings.push(this.createWarning(WarningCode.EMPTY_DEFINITION, "Definition type has no members", cls));
         }
-    }
 
-    private validateStereotypes(cls: ParsedClass, errors: ValidationError[], warnings: ValidationWarning[]): void {
-        const stereotype = cls.stereotype;
+        // Stereotype validation
         const validStereotypes = ["class", "interface", "abstract", "enum", "service", "entity"];
 
         if (!validStereotypes.includes(stereotype)) {
-            this.addWarning(warnings, WarningCode.UNKNOWN_STEREOTYPE, `Unknown stereotype: ${stereotype}`, cls);
-            return;
+            warnings.push(this.createWarning(WarningCode.UNKNOWN_STEREOTYPE, `Unknown stereotype: ${stereotype}`, cls));
+            return { isValid: errors.length === 0, errors, warnings };
         }
 
+        // Interface should not have properties
         if (stereotype === "interface" && cls.body.properties.length > 0) {
-            this.addWarning(warnings, WarningCode.INTERFACE_HAS_PROPERTIES, "Interface should not have properties", cls);
+            warnings.push(this.createWarning(WarningCode.INTERFACE_HAS_PROPERTIES, "Interface should not have properties", cls));
         }
 
-        if (stereotype === "enum") {
-            if (cls.body.methods.length > 0) {
-                this.addError(errors, ErrorCode.ENUM_HAS_METHODS, "Enumeration cannot have methods", cls);
-            }
+        // Enum cannot have methods
+        if (stereotype === "enum" && cls.body.methods.length > 0) {
+            errors.push(this.createError(ErrorCode.ENUM_HAS_METHODS, "Enumeration cannot have methods", cls));
         }
 
+        // Abstract should have at least one abstract method
         if (stereotype === "abstract") {
             const hasAbstractMethod = cls.body.methods.some(m => m.isAbstract);
             if (!hasAbstractMethod) {
-                this.addWarning(warnings, WarningCode.ABSTRACT_NO_ABSTRACT_METHODS, "Abstract class should have at least one abstract method", cls);
+                warnings.push(this.createWarning(WarningCode.ABSTRACT_NO_ABSTRACT_METHODS, "Abstract class should have at least one abstract method", cls));
             }
         }
+
+        return {
+            isValid: errors.length === 0,
+            errors,
+            warnings
+        };
     }
 
-    private validateDuplicates(cls: ParsedClass, processedNames: Map<string, string>, errors: ValidationError[]): void {
-        const existingNamespace = processedNames.get(cls.name);
-        const currentNamespace = cls.namespace || "default";
+    /**
+     * Check for duplicate class names within the same namespace.
+     * Pure function - takes all classes and returns duplicates found.
+     */
+    public checkDuplicates(classes: ParsedClass[]): DuplicateCheckResult {
+        const errors: ValidationError[] = [];
+        const duplicates: Array<{ name: string; indices: number[] }> = [];
 
-        if (existingNamespace) {
-            if (existingNamespace === currentNamespace) {
-                this.addError(errors, ErrorCode.DUPLICATE_CLASS, `Duplicate class name "${cls.name}" in namespace "${currentNamespace}"`, cls);
+        // Group classes by namespace+name
+        const nameMap = new Map<string, number[]>();
+
+        for (let i = 0; i < classes.length; i++) {
+            const cls = classes[i];
+            if (!cls) continue;
+
+            const namespace = cls.namespace || "default";
+            const key = `${namespace}::${cls.name}`;
+
+            const existing = nameMap.get(key);
+            if (existing) {
+                existing.push(i);
+            } else {
+                nameMap.set(key, [i]);
             }
-        } else {
-            processedNames.set(cls.name, currentNamespace);
         }
+
+        // Find duplicates (more than one class with same key)
+        for (const [key, indices] of nameMap) {
+            if (indices.length > 1) {
+                const [namespace, name] = key.split("::");
+                duplicates.push({ name: name || key, indices });
+
+                // Create error for each duplicate (skip the first one)
+                for (let i = 1; i < indices.length; i++) {
+                    const idx = indices[i];
+                    if (idx === undefined) continue;
+
+                    const cls = classes[idx];
+                    if (!cls) continue;
+
+                    errors.push(this.createError(
+                        ErrorCode.DUPLICATE_CLASS,
+                        `Duplicate class name "${cls.name}" in namespace "${namespace}"`,
+                        cls
+                    ));
+                }
+            }
+        }
+
+        return { duplicates, errors };
     }
 
-    private validateRelations(result: ClassDiagramResult, report: ValidationReport): void {
-        for (const rel of result.relations) {
+    /**
+     * Check for self-referencing relations.
+     * Pure function - returns warnings for self-references.
+     */
+    public checkSelfReferences(relations: ParsedRelation[]): SelfReferenceResult {
+        const warnings: ValidationWarning[] = [];
+
+        for (const rel of relations) {
             if (rel.sourceClass === rel.targetClass) {
-                report.warnings.push({
+                warnings.push({
                     code: WarningCode.SELF_REFERENCE,
                     message: `Class "${rel.sourceClass}" references itself`,
                     className: rel.sourceClass,
-                    line: undefined, // Relation doesn't track line number in current type def
-                    severity: Severity.WARNING
+                    line: 0 // Relations don't track line numbers
                 });
             }
         }
+
+        return { warnings };
     }
 
-    private addError(errors: ValidationError[], code: ErrorCode, message: string, cls: ParsedClass): void {
-        errors.push({
+    /**
+     * Aggregate results from all validation steps into a final ValidationReport.
+     */
+    private aggregateResults(
+        classResults: ClassValidationResult[],
+        duplicateResult: DuplicateCheckResult,
+        selfRefResult: SelfReferenceResult
+    ): ValidationReport {
+        const errors: ValidationError[] = [];
+        const warnings: ValidationWarning[] = [];
+        const validClasses: ParsedClass[] = [];
+        const skippedClasses: SkippedClass[] = [];
+
+        // Track which indices are duplicates (to skip them)
+        const duplicateIndices = new Set<number>();
+        for (const dup of duplicateResult.duplicates) {
+            // Skip all but the first occurrence
+            for (let i = 1; i < dup.indices.length; i++) {
+                const idx = dup.indices[i];
+                if (idx !== undefined) {
+                    duplicateIndices.add(idx);
+                }
+            }
+        }
+
+        // Process each class result
+        for (let i = 0; i < classResults.length; i++) {
+            const result = classResults[i];
+            if (!result) continue;
+
+            const isDuplicate = duplicateIndices.has(i);
+
+            if (isDuplicate) {
+                // Find the duplicate error for this class
+                const dupError = duplicateResult.errors.find(e => e.className === result.cls.name);
+                const classErrors = dupError ? [...result.errors, dupError] : result.errors;
+
+                errors.push(...classErrors);
+                warnings.push(...result.warnings);
+                skippedClasses.push({
+                    name: result.cls.name,
+                    reason: classErrors.map(e => e.message).join(", "),
+                    errors: classErrors
+                });
+            } else if (!result.isValid) {
+                errors.push(...result.errors);
+                warnings.push(...result.warnings);
+                skippedClasses.push({
+                    name: result.cls.name,
+                    reason: result.errors.map(e => e.message).join(", "),
+                    errors: result.errors
+                });
+            } else {
+                warnings.push(...result.warnings);
+                validClasses.push(result.cls);
+            }
+        }
+
+        // Add duplicate errors not already included
+        for (const err of duplicateResult.errors) {
+            if (!errors.some(e => e.code === err.code && e.className === err.className && e.line === err.line)) {
+                errors.push(err);
+            }
+        }
+
+        // Add self-reference warnings
+        warnings.push(...selfRefResult.warnings);
+
+        return {
+            isValid: errors.length === 0,
+            errors,
+            warnings,
+            validClasses,
+            skippedClasses
+        };
+    }
+
+    /**
+     * Create a ValidationError with consistent structure.
+     */
+    private createError(code: ErrorCode, message: string, cls: ParsedClass): ValidationError {
+        return {
             code,
             message,
             className: cls.name,
-            line: cls.startLine,
+            line: cls.startLine ?? 0,
             severity: Severity.ERROR
-        });
+        };
     }
 
-    private addWarning(warnings: ValidationWarning[], code: WarningCode, message: string, cls: ParsedClass): void {
-        warnings.push({
+    /**
+     * Create a ValidationWarning with consistent structure.
+     */
+    private createWarning(code: WarningCode, message: string, cls: ParsedClass): ValidationWarning {
+        return {
             code,
             message,
             className: cls.name,
-            line: cls.startLine,
-            severity: Severity.WARNING
-        });
+            line: cls.startLine ?? 0
+        };
     }
 }
