@@ -22,10 +22,10 @@ export class MarkdownParser {
 	 * Parses markdown content and extracts structured data.
 	 *
 	 * @param content - The markdown raw text.
-	 * @param sourceFile - Path to the file being parsed.
+	 * @param specFile - Path to the file being parsed.
 	 * @returns A ParseResult containing extracted blocks and tables.
 	 */
-	parse(content: string, sourceFile: string): ParseResult {
+	parse(content: string, specFile: string): ParseResult {
 		try {
 			const ast = this.buildAST(content);
 			const blocks = this.extractCodeBlocks(ast);
@@ -36,7 +36,7 @@ export class MarkdownParser {
 				blocks,
 				routedBlocks,
 				tables,
-				sourceFile,
+				specFile,
 				errors: [],
 			};
 		} catch (error) {
@@ -44,7 +44,7 @@ export class MarkdownParser {
 				blocks: [],
 				routedBlocks: [],
 				tables: [],
-				sourceFile,
+				specFile,
 				errors: [
 					{
 						message:

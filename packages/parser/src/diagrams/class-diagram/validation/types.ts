@@ -1,11 +1,11 @@
 import type { ParsedClass } from "../types";
 
 export enum ErrorCode {
-    MISSING_PACKAGE = "MISSING_PACKAGE",
+    MISSING_ADDRESS = "MISSING_ADDRESS",
     MISSING_TYPE = "MISSING_TYPE",
-    INVALID_PACKAGE_FORMAT = "INVALID_PACKAGE_FORMAT",
+    INVALID_ADDRESS_FORMAT = "INVALID_ADDRESS_FORMAT",
     INVALID_TYPE_VALUE = "INVALID_TYPE_VALUE",
-    DUPLICATE_PACKAGE = "DUPLICATE_PACKAGE",
+    DUPLICATE_ADDRESS = "DUPLICATE_ADDRESS",
     DUPLICATE_TYPE = "DUPLICATE_TYPE",
     REFERENCE_HAS_MEMBERS = "REFERENCE_HAS_MEMBERS",
     ENUM_HAS_METHODS = "ENUM_HAS_METHODS",
@@ -68,7 +68,7 @@ export interface ClassValidationResult {
 }
 
 /**
- * Result of annotation validation (@package, @type).
+ * Result of annotation validation (@address, @type).
  */
 export interface AnnotationValidationResult {
     isValid: boolean;

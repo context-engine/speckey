@@ -55,7 +55,7 @@ export class ClassDiagramValidator {
     }
 
     /**
-     * Validate @package and @type annotations.
+     * Validate @address and @type annotations.
      * Pure function - returns AnnotationValidationResult.
      */
     public validateAnnotations(cls: ParsedClass): AnnotationValidationResult {
@@ -65,8 +65,8 @@ export class ClassDiagramValidator {
         // Check for duplicate annotations (from AnnotationParser errors array)
         if (annotations.errors && Array.isArray(annotations.errors)) {
             for (const err of annotations.errors) {
-                if (err.includes("Duplicate @package")) {
-                    errors.push(this.createError(ErrorCode.DUPLICATE_PACKAGE, "Multiple @package annotations found", cls));
+                if (err.includes("Duplicate @address")) {
+                    errors.push(this.createError(ErrorCode.DUPLICATE_ADDRESS, "Multiple @address annotations found", cls));
                 }
                 if (err.includes("Duplicate @type")) {
                     errors.push(this.createError(ErrorCode.DUPLICATE_TYPE, "Multiple @type annotations found", cls));
@@ -74,11 +74,11 @@ export class ClassDiagramValidator {
             }
         }
 
-        // Check @package presence and format
-        if (!annotations.package) {
-            errors.push(this.createError(ErrorCode.MISSING_PACKAGE, "Missing required annotation: @package", cls));
-        } else if (/[^a-zA-Z0-9_.]/.test(annotations.package)) {
-            errors.push(this.createError(ErrorCode.INVALID_PACKAGE_FORMAT, "Package contains invalid characters", cls));
+        // Check @address presence and format
+        if (!annotations.address) {
+            errors.push(this.createError(ErrorCode.MISSING_ADDRESS, "Missing required annotation: @address", cls));
+        } else if (/[^a-zA-Z0-9_.]/.test(annotations.address)) {
+            errors.push(this.createError(ErrorCode.INVALID_ADDRESS_FORMAT, "Address contains invalid characters", cls));
         }
 
         // Check @type presence and value

@@ -87,8 +87,8 @@ export interface ParseResult {
 	routedBlocks: RoutedBlock[];
 	/** Extracted markdown tables */
 	tables: TableNode[];
-	/** Original source file path */
-	sourceFile: string;
+	/** Original spec file path */
+	specFile: string;
 	/** Errors encountered during parsing */
 	errors: ParseError[];
 }

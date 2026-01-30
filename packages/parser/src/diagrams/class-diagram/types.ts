@@ -56,7 +56,7 @@ export interface ClassBody {
 }
 
 export interface Annotations {
-    package?: string;
+    address?: string;
     entityType?: "definition" | "reference" | "external";
     [key: string]: any;
 }

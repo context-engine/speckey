@@ -268,7 +268,7 @@ classDiagram
 `;
 		const result = parser.parse(markdown, "session.md");
 
-		expect(result.sourceFile).toBe("session.md");
+		expect(result.specFile).toBe("session.md");
 		expect(result.routedBlocks[0]?.block.startLine).toBe(5);
 		expect(result.routedBlocks[0]?.block.endLine).toBe(8);
 	});
@@ -330,7 +330,7 @@ More content here.
 `;
 		const result = parser.parse(markdown, "architecture.md");
 
-		expect(result.sourceFile).toBe("architecture.md");
+		expect(result.specFile).toBe("architecture.md");
 		expect(result.routedBlocks).toHaveLength(1);
 
 		const routedBlock = result.routedBlocks[0];

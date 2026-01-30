@@ -479,14 +479,14 @@ namespace BaseShapes {
 
             expect(annotations).toBeDefined();
             expect(annotations?.isValid).toBe(false);
-            expect(annotations?.errors).toContain("Missing required annotation: @package");
+            expect(annotations?.errors).toContain("Missing required annotation: @address");
             expect(annotations?.errors).toContain("Missing required annotation: @type");
         });
 
         it("should validate correct annotations", () => {
             const content = `classDiagram
             class User {
-                %% @package domain.users
+                %% @address domain.users
                 %% @type definition
                 +name: string
             }
@@ -502,7 +502,7 @@ namespace BaseShapes {
             const annotations = result[0]?.annotations;
 
             expect(annotations?.isValid).toBe(true);
-            expect(annotations?.package).toBe("domain.users");
+            expect(annotations?.address).toBe("domain.users");
             expect(annotations?.entityType).toBe("definition");
             expect(annotations?.errors).toHaveLength(0);
         });
@@ -848,7 +848,7 @@ class Mixed {
                 content: `classDiagram
 class Ordered {
     %% @type definition
-    %% @package com.example
+    %% @address com.example
     +field: string
 }`,
                 startLine: 1,
@@ -858,7 +858,7 @@ class Ordered {
             const result = extractor.extract(block).classes;
 
             // Annotations should be parsed regardless of order
-            expect(result[0]?.annotations?.package).toBe("com.example");
+            expect(result[0]?.annotations?.address).toBe("com.example");
             expect(result[0]?.annotations?.entityType).toBe("definition");
         });
     });

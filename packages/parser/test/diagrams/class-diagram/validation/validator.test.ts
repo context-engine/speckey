@@ -22,7 +22,7 @@ describe("ClassDiagramValidator", () => {
         isGeneric: false,
         typeParams: [],
         stereotype: "class",
-        annotations: { package: "test.pkg", entityType: "definition" },
+        annotations: { address: "test.pkg", entityType: "definition" },
         body: { methods: [], properties: [], enumValues: [] },
         startLine: 1,
         endLine: 5,
@@ -30,19 +30,19 @@ describe("ClassDiagramValidator", () => {
     });
 
     describe("Annotation Validation", () => {
-        it("should skip class missing @package annotation", () => {
+        it("should skip class missing @address annotation", () => {
             const cls = createClass({ annotations: { entityType: "definition" } });
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_PACKAGE);
+            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_ADDRESS);
             expect(result.skippedClasses).toHaveLength(1);
             expect(result.skippedClasses[0]!.name).toBe(cls.name);
         });
 
         it("should skip class missing @type annotation", () => {
-            const cls = createClass({ annotations: { package: "test.pkg" } });
+            const cls = createClass({ annotations: { address: "test.pkg" } });
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
@@ -50,18 +50,18 @@ describe("ClassDiagramValidator", () => {
             expect(result.skippedClasses).toHaveLength(1);
         });
 
-        it("should skip class with invalid package format", () => {
-            const cls = createClass({ annotations: { package: "invalid/format", entityType: "definition" } });
+        it("should skip class with invalid address format", () => {
+            const cls = createClass({ annotations: { address: "invalid/format", entityType: "definition" } });
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_PACKAGE_FORMAT);
+            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_ADDRESS_FORMAT);
             expect(result.errors[0]!.message).toMatch(/invalid/i);
             expect(result.skippedClasses).toHaveLength(1);
         });
 
         it("should skip class with invalid @type value", () => {
-            const cls = createClass({ annotations: { package: "test.pkg", entityType: "invalid" as any } });
+            const cls = createClass({ annotations: { address: "test.pkg", entityType: "invalid" as any } });
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
@@ -70,24 +70,24 @@ describe("ClassDiagramValidator", () => {
             expect(result.skippedClasses).toHaveLength(1);
         });
 
-        it("should skip class with duplicate @package", () => {
+        it("should skip class with duplicate @address", () => {
             const cls = createClass({
                 annotations: {
-                    package: "test.pkg",
+                    address: "test.pkg",
                     entityType: "definition",
-                    errors: ["Duplicate @package found"]
+                    errors: ["Duplicate @address found"]
                 } as any
             });
             const result = validator.validate(createResult([cls]));
 
             expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.DUPLICATE_PACKAGE);
+            expect(result.errors[0]!.code).toBe(ErrorCode.DUPLICATE_ADDRESS);
         });
 
         it("should skip class with duplicate @type", () => {
             const cls = createClass({
                 annotations: {
-                    package: "test.pkg",
+                    address: "test.pkg",
                     entityType: "definition",
                     errors: ["Duplicate @type found"]
                 } as any
@@ -111,7 +111,7 @@ describe("ClassDiagramValidator", () => {
     describe("Type Constraint Validation", () => {
         it("should error on reference class with members", () => {
             const cls = createClass({
-                annotations: { package: "test.pkg", entityType: "reference" },
+                annotations: { address: "test.pkg", entityType: "reference" },
                 body: {
                     methods: [{ name: "foo", visibility: "public", parameters: [], returnType: "void", isAbstract: false, isStatic: false }],
                     properties: [],
@@ -127,7 +127,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should pass reference class without members", () => {
             const cls = createClass({
-                annotations: { package: "test.pkg", entityType: "reference" },
+                annotations: { address: "test.pkg", entityType: "reference" },
                 body: { methods: [], properties: [], enumValues: [] }
             });
             const result = validator.validate(createResult([cls]));
@@ -137,7 +137,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should warn on definition class without members", () => {
             const cls = createClass({
-                annotations: { package: "test.pkg", entityType: "definition" },
+                annotations: { address: "test.pkg", entityType: "definition" },
                 body: { methods: [], properties: [], enumValues: [] }
             });
             const result = validator.validate(createResult([cls]));
@@ -149,7 +149,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should pass external class with members", () => {
             const cls = createClass({
-                annotations: { package: "test.pkg", entityType: "external" },
+                annotations: { address: "test.pkg", entityType: "external" },
                 body: { methods: [{ name: "foo", visibility: "public", parameters: [], returnType: "void", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
             });
             const result = validator.validate(createResult([cls]));
@@ -159,7 +159,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should pass external class without members", () => {
             const cls = createClass({
-                annotations: { package: "test.pkg", entityType: "external" },
+                annotations: { address: "test.pkg", entityType: "external" },
                 body: { methods: [], properties: [], enumValues: [] }
             });
             const result = validator.validate(createResult([cls]));
@@ -281,7 +281,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should report isValid false when any error", () => {
             const result = validator.validate(createResult([
-                createClass({ annotations: { entityType: "definition" } }) // Missing package
+                createClass({ annotations: { entityType: "definition" } }) // Missing address
             ]));
             expect(result.isValid).toBe(false);
         });
@@ -317,7 +317,7 @@ describe("ClassDiagramValidator", () => {
 
             expect(result.errors.length).toBeGreaterThanOrEqual(2);
             const codes = result.errors.map(e => e.code);
-            expect(codes).toContain(ErrorCode.MISSING_PACKAGE);
+            expect(codes).toContain(ErrorCode.MISSING_ADDRESS);
             expect(codes).toContain(ErrorCode.ENUM_HAS_METHODS);
         });
 
@@ -335,13 +335,13 @@ describe("ClassDiagramValidator", () => {
 
         it("should check annotations before stereotypes", () => {
             const cls = createClass({
-                annotations: { entityType: "definition" }, // Missing Package
+                annotations: { entityType: "definition" }, // Missing address
                 stereotype: "enum",
                 body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] } // Enum has methods
             });
 
             const result = validator.validate(createResult([cls]));
-            expect(result.errors.map(e => e.code)).toContain(ErrorCode.MISSING_PACKAGE);
+            expect(result.errors.map(e => e.code)).toContain(ErrorCode.MISSING_ADDRESS);
         });
     });
 
@@ -368,14 +368,14 @@ describe("ClassDiagramValidator", () => {
 
         it("should aggregate errors from annotation and stereotype validation", () => {
             const cls = createClass({
-                annotations: { entityType: "definition" }, // Missing package
+                annotations: { entityType: "definition" }, // Missing address
                 stereotype: "enum",
                 body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
             });
             const result = validator.validateClass(cls);
 
             const codes = result.errors.map(e => e.code);
-            expect(codes).toContain(ErrorCode.MISSING_PACKAGE);
+            expect(codes).toContain(ErrorCode.MISSING_ADDRESS);
             expect(codes).toContain(ErrorCode.ENUM_HAS_METHODS);
         });
     });
@@ -389,28 +389,28 @@ describe("ClassDiagramValidator", () => {
             expect(result.errors).toHaveLength(0);
         });
 
-        it("should detect missing @package", () => {
+        it("should detect missing @address", () => {
             const cls = createClass({ annotations: { entityType: "definition" } });
             const result = validator.validateAnnotations(cls);
 
             expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_PACKAGE);
+            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_ADDRESS);
         });
 
         it("should detect missing @type", () => {
-            const cls = createClass({ annotations: { package: "test.pkg" } });
+            const cls = createClass({ annotations: { address: "test.pkg" } });
             const result = validator.validateAnnotations(cls);
 
             expect(result.isValid).toBe(false);
             expect(result.errors.some(e => e.code === ErrorCode.MISSING_TYPE)).toBe(true);
         });
 
-        it("should detect invalid package format", () => {
-            const cls = createClass({ annotations: { package: "a/b", entityType: "definition" } });
+        it("should detect invalid address format", () => {
+            const cls = createClass({ annotations: { address: "a/b", entityType: "definition" } });
             const result = validator.validateAnnotations(cls);
 
             expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_PACKAGE_FORMAT);
+            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_ADDRESS_FORMAT);
         });
     });
 
@@ -426,7 +426,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should detect reference with members", () => {
             const cls = createClass({
-                annotations: { package: "test", entityType: "reference" },
+                annotations: { address: "test", entityType: "reference" },
                 body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
             });
             const result = validator.validateStereotype(cls);
@@ -437,7 +437,7 @@ describe("ClassDiagramValidator", () => {
 
         it("should warn on empty definition", () => {
             const cls = createClass({
-                annotations: { package: "test", entityType: "definition" },
+                annotations: { address: "test", entityType: "definition" },
                 body: { methods: [], properties: [], enumValues: [] }
             });
             const result = validator.validateStereotype(cls);

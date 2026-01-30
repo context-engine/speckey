@@ -17,9 +17,9 @@ export class AnnotationParser {
         for (const comment of comments) {
             const cleanComment = comment.replace(/^%%/, "").trim();
 
-            if (cleanComment.startsWith("@package")) {
-                result.package = this.parsePackage(cleanComment);
-                const validation = this.validatePackageName(result.package);
+            if (cleanComment.startsWith("@address")) {
+                result.address = this.parseAddress(cleanComment);
+                const validation = this.validateAddressName(result.address);
                 if (!validation.valid) {
                     result.errors?.push(validation.error!);
                 }
@@ -35,8 +35,8 @@ export class AnnotationParser {
         }
 
         // Validate required fields
-        if (!result.package) {
-            result.errors?.push("Missing required annotation: @package");
+        if (!result.address) {
+            result.errors?.push("Missing required annotation: @address");
         }
         if (!result.entityType) {
             result.errors?.push("Missing required annotation: @type");
@@ -46,8 +46,8 @@ export class AnnotationParser {
         return result;
     }
 
-    public parsePackage(comment: string): string {
-        return comment.replace(/^@package\s+/, "").trim();
+    public parseAddress(comment: string): string {
+        return comment.replace(/^@address\s+/, "").trim();
     }
 
     public parseType(comment: string): EntityType | undefined {
@@ -58,13 +58,13 @@ export class AnnotationParser {
         return undefined; // Or handle invalid type string if needed by strictly returning EntityType or throwing
     }
 
-    private validatePackageName(name: string): ValidationResult {
+    private validateAddressName(name: string): ValidationResult {
         // Dots allowed, no slashes, alphanumeric + underscore
         const regex = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)*$/;
         if (regex.test(name)) {
             return { valid: true };
         }
-        return { valid: false, error: `Invalid package name format: ${name}` };
+        return { valid: false, error: `Invalid address format: ${name}` };
     }
 
     private validateTypeName(name: EntityType | undefined): ValidationResult {
