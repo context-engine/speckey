@@ -87,7 +87,7 @@ export class FileDiscovery {
 				continue;
 			}
 
-			await this.validateAndIncludeFile(filePath, config.maxFileSizeMb, result);
+			await this.validateAndIncludeFile(filePath, result);
 		}
 	}
 
@@ -121,7 +121,6 @@ export class FileDiscovery {
 
 	private async validateAndIncludeFile(
 		filePath: string,
-		maxFileSizeMb: number,
 		result: DiscoveredFiles,
 	): Promise<void> {
 		try {
@@ -135,14 +134,8 @@ export class FileDiscovery {
 				return;
 			}
 
-			const sizeInBytes = file.size;
-			const sizeInMb = sizeInBytes / (1024 * 1024);
-
-			if (sizeInMb > maxFileSizeMb) {
-				result.skipped.push({ path: filePath, reason: SkipReason.TOO_LARGE });
-				return;
-			}
-
+			// Phase 1: Only check file existence, not size
+			// Size validation happens in Phase 1b (readFiles)
 			result.files.push(filePath);
 		} catch (error: unknown) {
 			const message =
@@ -160,9 +153,13 @@ export class FileDiscovery {
 	 * Read file contents with validation.
 	 * Phase 1b: File Reading
 	 */
-	public async readFiles(files: string[]): Promise<FileContents> {
+	public async readFiles(
+		files: string[],
+		maxFileSizeMb: number = 10,
+	): Promise<FileContents> {
 		const result: FileContents = {
 			contents: [],
+			skipped: [],
 			errors: [],
 		};
 
@@ -176,6 +173,18 @@ export class FileDiscovery {
 						path: filePath,
 						message: "File does not exist",
 						code: "ENOENT",
+					});
+					continue;
+				}
+
+				// Phase 1b: Validate file size before reading
+				const sizeInBytes = file.size;
+				const sizeInMb = sizeInBytes / (1024 * 1024);
+
+				if (sizeInMb > maxFileSizeMb) {
+					result.skipped.push({
+						path: filePath,
+						reason: SkipReason.TOO_LARGE,
 					});
 					continue;
 				}

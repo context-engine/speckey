@@ -51,6 +51,10 @@ export interface FileContents {
 	 */
 	contents: FileContent[];
 	/**
+	 * Files that were skipped during reading (Phase 1b).
+	 */
+	skipped: SkippedFile[];
+	/**
 	 * Errors encountered during reading.
 	 */
 	errors: DiscoveryError[];

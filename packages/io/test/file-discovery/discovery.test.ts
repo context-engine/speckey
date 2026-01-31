@@ -278,18 +278,23 @@ describe("FileDiscovery", () => {
 	// ============================================================
 
 	describe("Large Repository Handling", () => {
-		it("should skip files exceeding max size", async () => {
+		it("should skip files exceeding max size during file reading (Phase 1b)", async () => {
 			const config = {
 				include: ["large.md"],
 				exclude: [],
 				maxFiles: 100,
-				maxFileSizeMb: 1, // 1MB limit, large.md is 2MB
+				maxFileSizeMb: 10, // Not used in discover() anymore
 				rootDir: testDir,
 			};
 
-			const result = await discovery.discover(config);
+			// Phase 1: Discover files (should include large.md)
+			const discovered = await discovery.discover(config);
+			expect(discovered.files.some((f) => f.endsWith("large.md"))).toBe(true);
 
-			expect(result.files.some((f) => f.endsWith("large.md"))).toBe(false);
+			// Phase 1b: Read files with size limit (should skip large.md)
+			const result = await discovery.readFiles(discovered.files, 1); // 1MB limit, large.md is 2MB
+
+			expect(result.contents.some((c) => c.path.endsWith("large.md"))).toBe(false);
 			expect(
 				result.skipped.some(
 					(s) => s.path.endsWith("large.md") && s.reason === SkipReason.TOO_LARGE,
@@ -297,7 +302,7 @@ describe("FileDiscovery", () => {
 			).toBe(true);
 		});
 
-		it("should include files under max size limit", async () => {
+		it("should include files under max size limit during file reading (Phase 1b)", async () => {
 			const config = {
 				include: ["spec1.md"],
 				exclude: [],
@@ -306,12 +311,15 @@ describe("FileDiscovery", () => {
 				rootDir: testDir,
 			};
 
-			const result = await discovery.discover(config);
+			// Phase 1: Discover files
+			const discovered = await discovery.discover(config);
+			expect(discovered.files.some((f) => f.endsWith("spec1.md"))).toBe(true);
 
-			expect(result.files.some((f) => f.endsWith("spec1.md"))).toBe(true);
-			expect(
-				result.skipped.some((s) => s.path.endsWith("spec1.md")),
-			).toBe(false);
+			// Phase 1b: Read files with size limit (spec1.md is small, should be included)
+			const result = await discovery.readFiles(discovered.files, 10); // 10MB limit
+
+			expect(result.contents.some((c) => c.path.endsWith("spec1.md"))).toBe(true);
+			expect(result.skipped.some((s) => s.path.endsWith("spec1.md"))).toBe(false);
 		});
 	});
 
@@ -400,25 +408,29 @@ describe("FileDiscovery", () => {
 				include: ["**/*"],
 				exclude: ["**/exclude_this.md"],
 				maxFiles: 100,
-				maxFileSizeMb: 1, // Will cause large.md to be skipped
+				maxFileSizeMb: 10,
 				rootDir: testDir,
 			};
 
-			const result = await discovery.discover(config);
+			// Phase 1: Check skip reasons during discovery
+			const discovered = await discovery.discover(config);
 
-			// Check for NOT_MARKDOWN
+			// Check for NOT_MARKDOWN (during discovery)
 			expect(
-				result.skipped.some((s) => s.reason === SkipReason.NOT_MARKDOWN),
+				discovered.skipped.some((s) => s.reason === SkipReason.NOT_MARKDOWN),
 			).toBe(true);
 
-			// Check for EXCLUDED_PATTERN
+			// Check for EXCLUDED_PATTERN (during discovery)
 			expect(
-				result.skipped.some((s) => s.reason === SkipReason.EXCLUDED_PATTERN),
+				discovered.skipped.some((s) => s.reason === SkipReason.EXCLUDED_PATTERN),
 			).toBe(true);
 
-			// Check for TOO_LARGE
+			// Phase 1b: Check TOO_LARGE during file reading
+			const readResult = await discovery.readFiles(discovered.files, 1); // 1MB limit
+
+			// Check for TOO_LARGE (during file reading)
 			expect(
-				result.skipped.some((s) => s.reason === SkipReason.TOO_LARGE),
+				readResult.skipped.some((s) => s.reason === SkipReason.TOO_LARGE),
 			).toBe(true);
 		});
 	});
