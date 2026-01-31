@@ -16,11 +16,15 @@ export class DiagramRouter {
      * @returns Array of routed blocks with diagram types
      */
     routeBlocks(blocks: CodeBlock[]): RoutedBlock[] {
-        return blocks.map((block) => ({
-            block,
-            diagramType: this.detectDiagramType(block.content),
-            isSupported: true, // All detected types are routed
-        }));
+        return blocks.map((block) => {
+            const diagramType = this.detectDiagramType(block.content);
+            return {
+                block,
+                diagramType,
+                // UNKNOWN blocks are not supported for downstream parsing
+                isSupported: diagramType !== DiagramType.UNKNOWN,
+            };
+        });
     }
 
     /**

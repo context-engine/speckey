@@ -32,12 +32,23 @@ export class MarkdownParser {
 			const routedBlocks = this.router.routeBlocks(blocks);
 			const tables = this.extractTables(ast);
 
+			const errors = [];
+
+			// Emit warning if no mermaid blocks found
+			if (blocks.length === 0) {
+				errors.push({
+					message: "No mermaid diagrams found in file",
+					line: 1,
+					severity: ErrorSeverity.WARNING,
+				});
+			}
+
 			return {
 				blocks,
 				routedBlocks,
 				tables,
 				specFile,
-				errors: [],
+				errors,
 			};
 		} catch (error) {
 			return {

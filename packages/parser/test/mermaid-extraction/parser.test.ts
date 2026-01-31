@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { MarkdownParser } from "../../src/mermaid-extraction/parser";
-import { DiagramType } from "../../src/mermaid-extraction/types";
+import { DiagramType, ErrorSeverity } from "../../src/mermaid-extraction/types";
 
 describe("MarkdownParser", () => {
 	const parser = new MarkdownParser();
@@ -83,13 +83,17 @@ classDiagram
 		const result = parser.parse("", "empty.md");
 		expect(result.blocks).toHaveLength(0);
 		expect(result.tables).toHaveLength(0);
-		expect(result.errors).toHaveLength(0);
+		expect(result.errors).toHaveLength(1); // Warning for no mermaid diagrams
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
 	});
 
-	it("should handle markdown with no mermaid blocks", () => {
+	it("should handle markdown with no mermaid blocks and emit warning", () => {
 		const markdown = "# Just text\nNo code here.";
 		const result = parser.parse(markdown, "test.md");
 		expect(result.blocks).toHaveLength(0);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toContain("No mermaid diagrams");
 	});
 
 	it("should handle tables with inline formatting (bold, italic, code)", () => {
@@ -282,7 +286,9 @@ Just text.
 
 		expect(result.blocks).toHaveLength(0);
 		expect(result.routedBlocks).toHaveLength(0);
-		expect(result.errors).toHaveLength(0);
+		expect(result.errors).toHaveLength(1); // Warning for no mermaid diagrams
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toContain("No mermaid diagrams");
 	});
 
 	it("should return routedBlocks with correct MINDMAP type", () => {
@@ -300,7 +306,7 @@ mindmap
 		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.MINDMAP);
 	});
 
-	it("should mark UNKNOWN blocks with diagramType UNKNOWN", () => {
+	it("should mark UNKNOWN blocks as unsupported (skipped for downstream parsing)", () => {
 		const markdown = `
 \`\`\`mermaid
 this is invalid mermaid content
@@ -311,7 +317,7 @@ not a valid diagram
 
 		expect(result.routedBlocks).toHaveLength(1);
 		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
-		expect(result.routedBlocks[0]?.isSupported).toBe(true);
+		expect(result.routedBlocks[0]?.isSupported).toBe(false); // Should be skipped
 	});
 
 	it("should preserve source file and line numbers for downstream parsers", () => {
