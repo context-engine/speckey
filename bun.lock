@@ -60,13 +60,6 @@
         "svelte": "^5.0.0",
       },
     },
-    "packages/entity": {
-      "name": "@speckey/entity",
-      "version": "0.1.0",
-      "dependencies": {
-        "@speckey/shared": "workspace:*",
-      },
-    },
     "packages/io": {
       "name": "@speckey/io",
       "version": "0.1.0",
@@ -78,6 +71,7 @@
       "name": "@speckey/parser",
       "version": "0.1.0",
       "dependencies": {
+        "@speckey/core": "workspace:*",
         "@speckey/shared": "workspace:*",
         "mermaid-ast": "^0.8.2",
         "remark-gfm": "^4.0.1",
@@ -90,25 +84,11 @@
         "@types/unist": "^3.0.3",
       },
     },
-    "packages/resolver": {
-      "name": "@speckey/resolver",
-      "version": "0.1.0",
-      "dependencies": {
-        "@speckey/shared": "workspace:*",
-      },
-    },
     "packages/shared": {
       "name": "@speckey/shared",
       "version": "0.1.0",
       "dependencies": {
         "zod": "^4.3.6",
-      },
-    },
-    "packages/validation": {
-      "name": "@speckey/validation",
-      "version": "0.1.0",
-      "dependencies": {
-        "@speckey/shared": "workspace:*",
       },
     },
   },
@@ -377,17 +357,11 @@
 
     "@speckey/diagram-renderer": ["@speckey/diagram-renderer@workspace:packages/diagram-renderer"],
 
-    "@speckey/entity": ["@speckey/entity@workspace:packages/entity"],
-
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
 
     "@speckey/parser": ["@speckey/parser@workspace:packages/parser"],
 
-    "@speckey/resolver": ["@speckey/resolver@workspace:packages/resolver"],
-
     "@speckey/shared": ["@speckey/shared@workspace:packages/shared"],
-
-    "@speckey/validation": ["@speckey/validation@workspace:packages/validation"],
 
     "@storybook/addon-actions": ["@storybook/addon-actions@8.6.15", "", { "dependencies": { "@storybook/global": "^5.0.0", "@types/uuid": "^9.0.1", "dequal": "^2.0.2", "polished": "^4.2.2", "uuid": "^9.0.0" }, "peerDependencies": { "storybook": "^8.6.15" } }, "sha512-zc600PBJqP9hCyRY5escKgKf6Zt9kdNZfm+Jwb46k5/NMSO4tNVeOPGBFxW9kSsIYk8j55sNske+Yh60G+8bcw=="],
 
