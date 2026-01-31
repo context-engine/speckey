@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import type { CodeBlock } from "../../../src/mermaid-extraction/types";
-import { ClassExtractor } from "../../../src/diagrams/class-diagram/class-extractor";
+import { ClassExtractor } from "../../../src/diagrams/class-diagram/class-parsing";
 
 describe("ClassExtractor", () => {
     let extractor: ClassExtractor;

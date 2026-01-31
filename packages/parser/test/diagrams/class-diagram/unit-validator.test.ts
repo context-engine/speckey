@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { ClassDiagramValidator } from "../../../../src/diagrams/class-diagram/unit-validator/validator";
-import { ErrorCode, WarningCode, Severity } from "../../../../src/diagrams/class-diagram/unit-validator/types";
-import type { ClassDiagramResult, ParsedClass } from "../../../../src/diagrams/class-diagram/types";
+import { ClassDiagramValidator } from "../../../src/diagrams/class-diagram/unit-validator/validator";
+import { ErrorCode, WarningCode, Severity } from "../../../src/diagrams/class-diagram/unit-validator/types";
+import type { ClassDiagramResult, ParsedClass } from "../../../src/diagrams/class-diagram/types";
 
 describe("ClassDiagramValidator", () => {
     let validator: ClassDiagramValidator;

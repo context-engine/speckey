@@ -11,15 +11,14 @@
 | MarkdownParser | `parser/mermaid-extraction/` | `parser/src/mermaid-extraction/parser.ts` | ✅ unit |
 | DiagramRouter | `parser/mermaid-extraction/` | `parser/src/mermaid-extraction/router.ts` | ✅ unit |
 | AnnotationParser | `parser/class-diagram/annotation-handling/` | `parser/src/diagrams/class-diagram/annotation-handling.ts` | via class-extractor tests |
-| ClassExtractor | `parser/class-diagram/class-parsing/` | `parser/src/diagrams/class-diagram/class-extractor.ts` | ✅ unit |
+| ClassExtractor | `parser/class-diagram/class-parsing/` | `parser/src/diagrams/class-diagram/class-parsing.ts` | ✅ unit |
+| UnitValidator | `parser/class-diagram/unit-validator/` | `parser/src/diagrams/class-diagram/unit-validator/` | ✅ unit |
 | CLI | `cli/` | `cli/src/cli.ts` | ✅ unit + e2e |
 
 ## Partially Implemented
 
 | Component | Spec | Implementation | Gap |
 |-----------|------|----------------|-----|
-| UnitValidator | `parser/class-diagram/unit-validator/` | `parser/src/diagrams/class-diagram/validation/validator.ts` | File/class named `ClassDiagramValidator`, needs rename to match spec `speckey.parser.class.unitValidator` |
-| ClassParsing | `parser/class-diagram/class-parsing/` | `parser/src/diagrams/class-diagram/class-parsing.ts` | Stub — logic lives in ClassExtractor |
 | RelationshipParsing | (part of class-parsing spec) | `parser/src/diagrams/class-diagram/relationship-parsing.ts` | Stub |
 
 ## Not Implemented

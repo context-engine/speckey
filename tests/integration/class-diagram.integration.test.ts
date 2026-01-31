@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 import { MarkdownParser } from "../../packages/parser/src/mermaid-extraction/parser";
-import { ClassExtractor } from "../../packages/parser/src/diagrams/class-diagram/class-extractor";
+import { ClassExtractor } from "../../packages/parser/src/diagrams/class-diagram/class-parsing";
 import type { CodeBlock } from "../../packages/parser/src/mermaid-extraction/types";
 import { readFileSync } from "node:fs";
 
