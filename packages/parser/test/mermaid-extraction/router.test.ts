@@ -158,7 +158,7 @@ classDiagram
             expect(routed).toHaveLength(0);
         });
 
-        it("should handle invalid mermaid content gracefully", () => {
+        it("should mark invalid mermaid as UNKNOWN and unsupported (skipped for parsing)", () => {
             const blocks = [
                 {
                     language: "mermaid",
@@ -172,7 +172,7 @@ classDiagram
 
             expect(routed).toHaveLength(1);
             expect(routed[0]?.diagramType).toBe(DiagramType.UNKNOWN);
-            expect(routed[0]?.isSupported).toBe(true);
+            expect(routed[0]?.isSupported).toBe(false); // UNKNOWN blocks are skipped
         });
     });
 });

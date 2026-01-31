@@ -101,7 +101,9 @@ export class ClassExtractor {
 
         const { startLine, endLine } = this.findLineNumbers(def.id, content, startLineOffset);
 
-        const classLines = content.split('\n').slice(startLine, endLine + 1);
+        const relativeStart = startLine - startLineOffset;
+        const relativeEnd = endLine - startLineOffset;
+        const classLines = content.split('\n').slice(relativeStart, relativeEnd + 1);
         const comments = classLines
             .map(line => line.trim())
             .filter(line => line.startsWith("%%"));
@@ -144,7 +146,9 @@ export class ClassExtractor {
 
         const { type1, type2, lineType } = rel.relation;
 
-        if (type1 === 'extension' || type2 === 'extension') {
+        if ((type1 === 'extension' || type2 === 'extension') && lineType === 'dotted') {
+            type = "realization";
+        } else if (type1 === 'extension' || type2 === 'extension') {
             type = "inheritance";
         } else if (type1 === 'composition' || type2 === 'composition') {
             type = "composition";
@@ -226,6 +230,9 @@ export class ClassExtractor {
 
     private parseMember(member: any, body: ClassBody, stereotype: Stereotype): void {
         const text = member.text?.trim() || member.title?.trim() || "";
+
+        if (text.startsWith("%%")) return;
+
         const visibility = this.mapVisibility(member.visibility || member.accessibility);
 
         const isStatic = text.endsWith("$") || member.isStatic;
@@ -341,7 +348,7 @@ export class ClassExtractor {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
 
-            if (line && line.includes(classId) && !found) {
+            if (line && new RegExp(`\\b${classId}\\b`).test(line) && !found) {
                 if (line.trim().startsWith("class ") || line.includes("{") || line.includes(":")) {
                     startLine = startLineOffset + i;
                     endLine = startLine;

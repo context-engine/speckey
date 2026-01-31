@@ -13,46 +13,38 @@
 | AnnotationParser | `parser/class-diagram/annotation-handling/` | `parser/src/diagrams/class-diagram/annotation-handling.ts` | via class-extractor tests |
 | ClassExtractor | `parser/class-diagram/class-parsing/` | `parser/src/diagrams/class-diagram/class-parsing.ts` | ✅ unit |
 | UnitValidator | `parser/class-diagram/unit-validator/` | `parser/src/diagrams/class-diagram/unit-validator/` | ✅ unit |
+| PackageRegistry | `core/package-registry/` | `core/src/package-registry/` | ✅ unit |
+| DeferredValidationQueue | `core/deferred-validation-queue/` | `core/src/deferred-validation-queue/` | ✅ unit |
+| TypeResolver | `parser/class-diagram/type-resolver/` | `parser/src/diagrams/class-diagram/type-resolver/` | ✅ unit |
+| EntityBuilder | `parser/class-diagram/entity-builder/` | `parser/src/diagrams/class-diagram/entity-builder/` | ✅ unit |
+| IntegrationValidator | `parser/class-diagram/integration-validator/` | `parser/src/diagrams/class-diagram/integration-validator/` | ✅ unit |
+| DatabaseTransaction | `database/transaction/` | `database/src/transaction/` | ✅ unit (32 scenarios) |
+| DatabaseWriter | `database/writer/` | `database/src/writer/` | ✅ unit (28 scenarios) |
 | CLI | `cli/` | `cli/src/cli.ts` | ✅ unit + e2e |
 
-## Partially Implemented
+## Pipeline Wiring
 
-| Component | Spec | Implementation | Gap |
-|-----------|------|----------------|-----|
-| RelationshipParsing | (part of class-parsing spec) | `parser/src/diagrams/class-diagram/relationship-parsing.ts` | Stub |
+All phases are wired end-to-end in `core/src/pipeline.ts`:
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | File discovery | ✅ Wired |
+| 2 | Mermaid extraction + routing | ✅ Wired |
+| 3a.0 | Class extraction | ✅ Wired |
+| 3a.1 | Unit validation | ✅ Wired |
+| 3a.2 | Entity building (EntityBuilder + TypeResolver) | ✅ Wired |
+| 4 | Integration validation (DeferredValidationQueue drain) | ✅ Wired |
+| 5 | Database write (DgraphWriter) | ✅ Wired (gated on writeConfig + validation pass) |
 
 ## Not Implemented
 
-| # | Component | Spec | Target Location | Dependencies |
-|---|-----------|------|-----------------|--------------|
-| 1 | PackageRegistry | `core/package-registry/` | `core/src/package-registry.ts` | None |
-| 2 | DeferredValidationQueue | `core/deferred-validation-queue/` | `core/src/deferred-validation-queue.ts` | None |
-| 3 | EntityBuilder | `parser/class-diagram/entity-builder/` | `parser/src/diagrams/class-diagram/entity-builder/` | PackageRegistry, TypeResolver, DeferredValidationQueue |
-| 4 | TypeResolver | `parser/class-diagram/type-resolver/` | `parser/src/diagrams/class-diagram/type-resolver/` | PackageRegistry, DeferredValidationQueue |
-| 5 | IntegrationValidator | `parser/class-diagram/integration-validator/` | `parser/src/diagrams/class-diagram/integration-validator/` | PackageRegistry, DeferredEntry |
-| 6 | DatabaseWriter | `database/writer/` | `database/src/writer/` | Transaction |
-| 7 | DatabaseTransaction | `database/transaction/` | `database/src/transaction/` | — |
-
-## Implementation Order
-
-Based on dependency graph:
-
-```
-1. PackageRegistry          (no deps — core infrastructure)
-2. DeferredValidationQueue  (no deps — core infrastructure)
-3. TypeResolver             (needs PackageRegistry, DeferredValidationQueue)
-4. EntityBuilder            (needs PackageRegistry, DeferredValidationQueue, TypeResolver)
-5. IntegrationValidator     (needs PackageRegistry, DeferredEntry)
-6. Pipeline updates         (wire new components into Phase 3a-2 and Phase 4)
-7. DatabaseTransaction      (no deps)
-8. DatabaseWriter           (needs Transaction)
-```
-
-Items 1-6 complete the parse pipeline through Phase 4.
-Items 7-8 add Phase 5 (database write).
+| # | Component | Spec | Target Location | Notes |
+|---|-----------|------|-----------------|-------|
+| 1 | E2E Pipeline Tests | `04-test-specs/integration/07-*`, `08-*` | `tests/e2e/` | Test specs written, implementation pending |
 
 ## Notes
 
 - All spec paths relative to `speckey/3-how/specs/03-architecture/`
 - All implementation paths relative to `speckey/implementation/packages/`
 - Shared package (`packages/shared/`) exists but is empty — may be used for cross-package types like ClassSpec
+- 475 tests passing across 22 files

@@ -910,4 +910,138 @@ class Foo {
             expect(result).toBeDefined();
         });
     });
+
+    // ============================================================
+    // Feature: Line Number Resolution (CD-1100)
+    // ============================================================
+
+    describe("Feature: Line Number Resolution", () => {
+        it("should not match substring class names in findLineNumbers", () => {
+            const content = `classDiagram
+class UserService {
+    %% @address app.services
+    %% @type definition
+    +getUser() string
+}
+class User {
+    %% @address app.models
+    %% @type definition
+    +name: string
+}`;
+            const result = extractor.extract(content, 0);
+
+            const userService = result.classes.find(c => c.name === "UserService");
+            const user = result.classes.find(c => c.name === "User");
+
+            expect(userService).toBeDefined();
+            expect(user).toBeDefined();
+
+            // Each class should have its own distinct line range
+            expect(user!.startLine).not.toBe(userService!.startLine);
+
+            // Each class should get its own annotations
+            expect(userService!.annotations?.address).toBe("app.services");
+            expect(user!.annotations?.address).toBe("app.models");
+        });
+
+        it("should parse annotations correctly with non-zero startLineOffset", () => {
+            const content = `classDiagram
+class Foo {
+    %% @address app.domain
+    %% @type definition
+    +doStuff() void
+}`;
+            const block: CodeBlock = {
+                language: "mermaid",
+                content,
+                startLine: 5,
+                endLine: 11,
+            };
+
+            const result = extractor.extract(block);
+            const foo = result.classes[0];
+
+            expect(foo).toBeDefined();
+            expect(foo!.annotations?.isValid).toBe(true);
+            expect(foo!.annotations?.address).toBe("app.domain");
+            expect(foo!.annotations?.entityType).toBe("definition");
+        });
+
+        it("should parse distinct annotations for multiple classes with non-zero offset", () => {
+            const content = `classDiagram
+class Alpha {
+    %% @address pkg.alpha
+    %% @type definition
+    +run() void
+}
+class Beta {
+    %% @address pkg.beta
+    %% @type reference
+}`;
+            const block: CodeBlock = {
+                language: "mermaid",
+                content,
+                startLine: 10,
+                endLine: 20,
+            };
+
+            const result = extractor.extract(block);
+            const alpha = result.classes.find(c => c.name === "Alpha");
+            const beta = result.classes.find(c => c.name === "Beta");
+
+            expect(alpha).toBeDefined();
+            expect(beta).toBeDefined();
+
+            expect(alpha!.annotations?.address).toBe("pkg.alpha");
+            expect(alpha!.annotations?.entityType).toBe("definition");
+
+            expect(beta!.annotations?.address).toBe("pkg.beta");
+            expect(beta!.annotations?.entityType).toBe("reference");
+        });
+    });
+
+    // ============================================================
+    // Feature: Comment Member Filtering (CD-1200)
+    // ============================================================
+
+    describe("Feature: Comment Member Filtering", () => {
+        it("should not parse %% comment lines as properties", () => {
+            const content = `classDiagram
+class Foo {
+    %% @address app.domain
+    %% @type definition
+    +name: string
+    +id: number
+}`;
+            const result = extractor.extract(content, 0);
+            const foo = result.classes[0];
+
+            expect(foo).toBeDefined();
+            // Should only have declared properties, not annotation-derived ones
+            const propNames = foo!.body.properties.map(p => p.name);
+            expect(propNames).toContain("name");
+            expect(propNames).toContain("id");
+            expect(propNames).not.toContain("app.domain");
+            expect(propNames).not.toContain("definition");
+
+            // No property should have type starting with "%%"
+            for (const prop of foo!.body.properties) {
+                expect(prop.type).not.toContain("%%");
+            }
+        });
+
+        it("should not parse %% comment lines as methods", () => {
+            const content = `classDiagram
+class Bar {
+    %% this is a plain comment
+    +doWork() void
+}`;
+            const result = extractor.extract(content, 0);
+            const bar = result.classes[0];
+
+            expect(bar).toBeDefined();
+            expect(bar!.body.methods).toHaveLength(1);
+            expect(bar!.body.methods[0]!.name).toBe("doWork");
+        });
+    });
 });

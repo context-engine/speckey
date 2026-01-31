@@ -1,5 +1,21 @@
 import { FileDiscovery } from "@speckey/io";
-import { MarkdownParser } from "@speckey/parser";
+import {
+    MarkdownParser,
+    ClassExtractor,
+    ClassDiagramValidator,
+    EntityBuilder,
+    TypeResolver,
+    IntegrationValidator,
+    DiagramType,
+    ErrorSeverity,
+} from "@speckey/parser";
+import type { IntegrationValidationReport } from "@speckey/parser";
+import { DgraphWriter } from "@speckey/database";
+import type { WriteResult, WriteConfig } from "@speckey/database";
+import { ClassSpecType } from "./package-registry/types";
+import type { ClassSpec } from "./package-registry/types";
+import { PackageRegistry } from "./package-registry";
+import { DeferredValidationQueue } from "./deferred-validation-queue";
 import {
     DEFAULT_CONFIG,
     type ParsedFile,
@@ -10,26 +26,37 @@ import {
 } from "./types";
 
 /**
- * Main orchestrator that runs the discover → read → parse pipeline.
+ * Main orchestrator that runs the full parse pipeline:
+ * Phase 1 (discover) → Phase 2 (extract blocks) → Phase 3a (parse + build entities)
+ * → Phase 4 (integration validation) → Phase 5 (database write).
  */
 export class ParsePipeline {
     private fileDiscovery: FileDiscovery;
     private markdownParser: MarkdownParser;
+    private classExtractor: ClassExtractor;
+    private classDiagramValidator: ClassDiagramValidator;
+    private integrationValidator: IntegrationValidator;
 
     constructor() {
         this.fileDiscovery = new FileDiscovery();
         this.markdownParser = new MarkdownParser();
+        this.classExtractor = new ClassExtractor();
+        this.classDiagramValidator = new ClassDiagramValidator();
+        this.integrationValidator = new IntegrationValidator();
     }
 
     /**
      * Run the full parsing pipeline.
-     *
-     * @param config - Pipeline configuration
-     * @returns Aggregated result with parsed files, errors, and stats
      */
     async run(config: PipelineConfig): Promise<PipelineResult> {
         const errors: PipelineError[] = [];
         const parsedFiles: ParsedFile[] = [];
+        const allClassSpecs: ClassSpec[] = [];
+
+        // Shared instances for entity building (one per run)
+        const registry = new PackageRegistry();
+        const deferredQueue = new DeferredValidationQueue();
+        const typeResolver = new TypeResolver();
 
         // Apply defaults
         const resolvedConfig = {
@@ -47,10 +74,38 @@ export class ParsePipeline {
         );
 
         // Phase 1b: Read files
-        const fileContents = await this.read(discoveredFiles, errors);
+        const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors);
 
-        // Phase 2: Parse each file
+        // Phase 2: Parse each file (extract mermaid blocks)
         const parseStats = this.parse(fileContents, parsedFiles, errors);
+
+        // Phase 3a: For each file, extract class diagrams, validate, build entities
+        for (const file of parsedFiles) {
+            this.buildEntities(file, registry, deferredQueue, typeResolver, allClassSpecs, errors);
+        }
+
+        // Phase 4: Integration validation
+        let validationReport: IntegrationValidationReport | undefined;
+        if (!config.skipValidation) {
+            const entries = deferredQueue.drain();
+            validationReport = this.integrationValidator.validate(entries, registry);
+            for (const err of validationReport.errors) {
+                errors.push({
+                    phase: "integration_validate",
+                    path: "",
+                    message: err.message,
+                    code: err.code,
+                });
+            }
+        }
+
+        // Phase 5: Database write (only if validation passed and writeConfig provided)
+        let writeResult: WriteResult | undefined;
+        const validationPassed = !validationReport || validationReport.errors.length === 0;
+        if (config.writeConfig && validationPassed) {
+            const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
+            writeResult = this.writeToDatabase(definitions, config.writeConfig, errors);
+        }
 
         // Aggregate stats
         const stats: PipelineStats = {
@@ -59,9 +114,96 @@ export class ParsePipeline {
             filesParsed: parsedFiles.length,
             blocksExtracted: parseStats.blocksExtracted,
             errorsCount: errors.length,
+            entitiesBuilt: allClassSpecs.length,
+            entitiesInserted: writeResult?.inserted ?? 0,
+            entitiesUpdated: writeResult?.updated ?? 0,
+            validationErrors: validationReport?.errors.length ?? 0,
         };
 
-        return { files: parsedFiles, errors, stats };
+        return { files: parsedFiles, errors, stats, classSpecs: allClassSpecs, validationReport, writeResult };
+    }
+
+    /**
+     * Phase 3a: Extract class diagrams, unit-validate, and build entities for a single file.
+     */
+    private buildEntities(
+        file: ParsedFile,
+        registry: PackageRegistry,
+        deferredQueue: DeferredValidationQueue,
+        typeResolver: TypeResolver,
+        allClassSpecs: ClassSpec[],
+        errors: PipelineError[],
+    ): void {
+        for (const routedBlock of file.blocks) {
+            if (routedBlock.diagramType !== DiagramType.CLASS_DIAGRAM) continue;
+
+            // Phase 3a.0: Extract parsed classes from mermaid block
+            const diagramResult = this.classExtractor.extract(routedBlock.block);
+
+            if (diagramResult.classes.length === 0) continue;
+
+            // Phase 3a.1: Unit validation
+            const validationReport = this.classDiagramValidator.validate(diagramResult);
+
+            if (validationReport.validClasses.length === 0) continue;
+
+            // Build currentDiagramClasses map from valid classes
+            const currentDiagramClasses = new Map<string, string>();
+            for (const cls of validationReport.validClasses) {
+                const address = cls.annotations?.address;
+                if (address) {
+                    currentDiagramClasses.set(cls.name, `${address}.${cls.name}`);
+                }
+            }
+
+            // Phase 3a.2: Build entities
+            const entityBuilder = new EntityBuilder();
+            const buildResult = entityBuilder.buildClassSpecs(
+                validationReport.validClasses,
+                diagramResult.relations,
+                {
+                    registry,
+                    deferredQueue,
+                    typeResolver,
+                    currentDiagramClasses,
+                    specFile: file.path,
+                },
+            );
+
+            for (const err of buildResult.errors) {
+                errors.push({
+                    phase: "build",
+                    path: file.path,
+                    message: err.message,
+                    code: err.code,
+                });
+            }
+
+            allClassSpecs.push(...buildResult.classSpecs);
+        }
+    }
+
+    /**
+     * Phase 5: Write definition entities to database.
+     */
+    private writeToDatabase(
+        definitions: ClassSpec[],
+        writeConfig: WriteConfig,
+        errors: PipelineError[],
+    ): WriteResult {
+        const writer = new DgraphWriter();
+        const result = writer.write(definitions, writeConfig);
+
+        for (const err of result.errors) {
+            errors.push({
+                phase: "write",
+                path: "",
+                message: err.message,
+                code: err.code,
+            });
+        }
+
+        return result;
     }
 
     /**
@@ -109,9 +251,10 @@ export class ParsePipeline {
      */
     private async read(
         files: string[],
+        maxFileSizeMb: number,
         errors: PipelineError[],
     ): Promise<{ path: string; content: string }[]> {
-        const result = await this.fileDiscovery.readFiles(files);
+        const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb);
 
         // Collect read errors
         for (const err of result.errors) {
@@ -127,7 +270,7 @@ export class ParsePipeline {
     }
 
     /**
-     * Parse file contents.
+     * Parse file contents (extract mermaid blocks).
      */
     private parse(
         contents: { path: string; content: string }[],
@@ -140,8 +283,9 @@ export class ParsePipeline {
             const parseResult = this.markdownParser.parse(file.content, file.path);
 
             // Collect parse errors
-            if (parseResult.errors.length > 0) {
-                for (const err of parseResult.errors) {
+            const realErrors = parseResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);
+            if (realErrors.length > 0) {
+                for (const err of realErrors) {
                     errors.push({
                         phase: "parse",
                         path: file.path,
@@ -149,7 +293,7 @@ export class ParsePipeline {
                         code: `LINE_${err.line}`,
                     });
                 }
-                // Skip files with errors
+                // Skip files with actual errors
                 continue;
             }
 
