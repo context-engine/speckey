@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { ClassDiagramValidator } from "../../../../src/diagrams/class-diagram/validation/validator";
-import { ErrorCode, WarningCode, Severity } from "../../../../src/diagrams/class-diagram/validation/types";
+import { ClassDiagramValidator } from "../../../../src/diagrams/class-diagram/unit-validator/validator";
+import { ErrorCode, WarningCode, Severity } from "../../../../src/diagrams/class-diagram/unit-validator/types";
 import type { ClassDiagramResult, ParsedClass } from "../../../../src/diagrams/class-diagram/types";
 
 describe("ClassDiagramValidator", () => {
@@ -345,175 +345,36 @@ describe("ClassDiagramValidator", () => {
         });
     });
 
-    // --- New tests for pure function methods ---
-
-    describe("validateClass (pure function)", () => {
-        it("should return ClassValidationResult with isValid true for valid class", () => {
-            const cls = createClass();
-            const result = validator.validateClass(cls);
-
-            expect(result.isValid).toBe(true);
-            expect(result.errors).toHaveLength(0);
-            expect(result.cls).toBe(cls);
-        });
-
-        it("should return ClassValidationResult with isValid false for invalid class", () => {
-            const cls = createClass({ annotations: {} });
-            const result = validator.validateClass(cls);
+    describe("Multiple Duplicates", () => {
+        it("should error on each duplicate beyond the first occurrence", () => {
+            const cls1 = createClass({ name: "Foo" });
+            const cls2 = createClass({ name: "Foo" });
+            const cls3 = createClass({ name: "Foo" });
+            const result = validator.validate(createResult([cls1, cls2, cls3]));
 
             expect(result.isValid).toBe(false);
-            expect(result.errors.length).toBeGreaterThan(0);
-            expect(result.cls).toBe(cls);
-        });
-
-        it("should aggregate errors from annotation and stereotype validation", () => {
-            const cls = createClass({
-                annotations: { entityType: "definition" }, // Missing address
-                stereotype: "enum",
-                body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
-            });
-            const result = validator.validateClass(cls);
-
-            const codes = result.errors.map(e => e.code);
-            expect(codes).toContain(ErrorCode.MISSING_ADDRESS);
-            expect(codes).toContain(ErrorCode.ENUM_HAS_METHODS);
+            const dupErrors = result.errors.filter(e => e.code === ErrorCode.DUPLICATE_CLASS);
+            expect(dupErrors).toHaveLength(2);
+            expect(result.validClasses).toHaveLength(1);
+            expect(result.skippedClasses).toHaveLength(2);
         });
     });
 
-    describe("validateAnnotations (pure function)", () => {
-        it("should return AnnotationValidationResult for valid annotations", () => {
-            const cls = createClass();
-            const result = validator.validateAnnotations(cls);
-
-            expect(result.isValid).toBe(true);
-            expect(result.errors).toHaveLength(0);
-        });
-
-        it("should detect missing @address", () => {
-            const cls = createClass({ annotations: { entityType: "definition" } });
-            const result = validator.validateAnnotations(cls);
-
-            expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.MISSING_ADDRESS);
-        });
-
-        it("should detect missing @type", () => {
-            const cls = createClass({ annotations: { address: "test.pkg" } });
-            const result = validator.validateAnnotations(cls);
-
-            expect(result.isValid).toBe(false);
-            expect(result.errors.some(e => e.code === ErrorCode.MISSING_TYPE)).toBe(true);
-        });
-
-        it("should detect invalid address format", () => {
-            const cls = createClass({ annotations: { address: "a/b", entityType: "definition" } });
-            const result = validator.validateAnnotations(cls);
-
-            expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.INVALID_ADDRESS_FORMAT);
-        });
-    });
-
-    describe("validateStereotype (pure function)", () => {
-        it("should return StereotypeValidationResult for valid stereotype", () => {
-            const cls = createClass({ body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] } });
-            const result = validator.validateStereotype(cls);
-
-            expect(result.isValid).toBe(true);
-            expect(result.errors).toHaveLength(0);
-            expect(result.warnings).toHaveLength(0);
-        });
-
-        it("should detect reference with members", () => {
-            const cls = createClass({
-                annotations: { address: "test", entityType: "reference" },
-                body: { methods: [{ name: "f", visibility: "public", parameters: [], returnType: "v", isAbstract: false, isStatic: false }], properties: [], enumValues: [] }
-            });
-            const result = validator.validateStereotype(cls);
-
-            expect(result.isValid).toBe(false);
-            expect(result.errors[0]!.code).toBe(ErrorCode.REFERENCE_HAS_MEMBERS);
-        });
-
-        it("should warn on empty definition", () => {
-            const cls = createClass({
-                annotations: { address: "test", entityType: "definition" },
-                body: { methods: [], properties: [], enumValues: [] }
-            });
-            const result = validator.validateStereotype(cls);
-
-            expect(result.isValid).toBe(true);
-            expect(result.warnings[0]!.code).toBe(WarningCode.EMPTY_DEFINITION);
-        });
-    });
-
-    describe("checkDuplicates (pure function)", () => {
-        it("should return empty result for no duplicates", () => {
-            const classes = [createClass({ name: "A" }), createClass({ name: "B" })];
-            const result = validator.checkDuplicates(classes);
-
-            expect(result.duplicates).toHaveLength(0);
-            expect(result.errors).toHaveLength(0);
-        });
-
-        it("should detect duplicates in same namespace", () => {
-            const classes = [createClass({ name: "Foo" }), createClass({ name: "Foo" })];
-            const result = validator.checkDuplicates(classes);
-
-            expect(result.duplicates).toHaveLength(1);
-            expect(result.duplicates[0]!.name).toBe("Foo");
-            expect(result.duplicates[0]!.indices).toEqual([0, 1]);
-            expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]!.code).toBe(ErrorCode.DUPLICATE_CLASS);
-        });
-
-        it("should allow same name in different namespaces", () => {
-            const classes = [createClass({ name: "Foo", namespace: "A" }), createClass({ name: "Foo", namespace: "B" })];
-            const result = validator.checkDuplicates(classes);
-
-            expect(result.duplicates).toHaveLength(0);
-            expect(result.errors).toHaveLength(0);
-        });
-
-        it("should handle multiple duplicates", () => {
-            const classes = [
-                createClass({ name: "Foo" }),
-                createClass({ name: "Foo" }),
-                createClass({ name: "Foo" })
+    describe("Multiple Self-References", () => {
+        it("should warn on each self-referencing relation", () => {
+            const cls1 = createClass({ name: "A", body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] } });
+            const cls2 = createClass({ name: "B", body: { methods: [], properties: [{ name: "p", visibility: "public", type: "s", isStatic: false }], enumValues: [] } });
+            const result = createResult([cls1, cls2]);
+            result.relations = [
+                { sourceClass: "A", targetClass: "A", type: "association" },
+                { sourceClass: "B", targetClass: "B", type: "dependency" }
             ];
-            const result = validator.checkDuplicates(classes);
 
-            expect(result.duplicates).toHaveLength(1);
-            expect(result.duplicates[0]!.indices).toEqual([0, 1, 2]);
-            expect(result.errors).toHaveLength(2); // Skip first, error on 2nd and 3rd
-        });
-    });
-
-    describe("checkSelfReferences (pure function)", () => {
-        it("should return empty for no self-references", () => {
-            const relations = [{ sourceClass: "A", targetClass: "B", type: "association" as const }];
-            const result = validator.checkSelfReferences(relations);
-
-            expect(result.warnings).toHaveLength(0);
-        });
-
-        it("should detect self-references", () => {
-            const relations = [{ sourceClass: "Foo", targetClass: "Foo", type: "association" as const }];
-            const result = validator.checkSelfReferences(relations);
-
-            expect(result.warnings).toHaveLength(1);
-            expect(result.warnings[0]!.code).toBe(WarningCode.SELF_REFERENCE);
-            expect(result.warnings[0]!.className).toBe("Foo");
-        });
-
-        it("should detect multiple self-references", () => {
-            const relations = [
-                { sourceClass: "A", targetClass: "A", type: "association" as const },
-                { sourceClass: "B", targetClass: "B", type: "dependency" as const }
-            ];
-            const result = validator.checkSelfReferences(relations);
-
-            expect(result.warnings).toHaveLength(2);
+            const report = validator.validate(result);
+            const selfRefWarnings = report.warnings.filter(w => w.code === WarningCode.SELF_REFERENCE);
+            expect(selfRefWarnings).toHaveLength(2);
+            expect(report.isValid).toBe(true);
+            expect(report.validClasses).toHaveLength(2);
         });
     });
 });

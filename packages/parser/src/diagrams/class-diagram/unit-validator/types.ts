@@ -55,11 +55,6 @@ export interface ValidationReport {
     skippedClasses: SkippedClass[];
 }
 
-// --- Intermediate Result Types (per spec) ---
-
-/**
- * Result of validating a single class through all validation steps.
- */
 export interface ClassValidationResult {
     isValid: boolean;
     errors: ValidationError[];
@@ -67,34 +62,22 @@ export interface ClassValidationResult {
     cls: ParsedClass;
 }
 
-/**
- * Result of annotation validation (@address, @type).
- */
 export interface AnnotationValidationResult {
     isValid: boolean;
     errors: ValidationError[];
 }
 
-/**
- * Result of stereotype constraint validation.
- */
 export interface StereotypeValidationResult {
     isValid: boolean;
     errors: ValidationError[];
     warnings: ValidationWarning[];
 }
 
-/**
- * Result of duplicate class detection.
- */
 export interface DuplicateCheckResult {
     duplicates: Array<{ name: string; indices: number[] }>;
     errors: ValidationError[];
 }
 
-/**
- * Result of self-reference detection in relations.
- */
 export interface SelfReferenceResult {
     warnings: ValidationWarning[];
 }
