@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 import { MarkdownParser } from "../../packages/parser/src/mermaid-extraction/parser";
 import { ClassExtractor } from "../../packages/parser/src/diagrams/class-diagram/class-parsing";
-import type { CodeBlock } from "../../packages/parser/src/mermaid-extraction/types";
+
 import { readFileSync } from "node:fs";
 
 const FIXTURES_DIR = resolve(import.meta.dir, "../fixtures/class-diagrams");
@@ -233,7 +233,7 @@ describe("Class Diagram Parser Integration", () => {
     // ============================================================
 
     describe("Error Resilience", () => {
-        it("should skip malformed relation lines", () => {
+        it("should parse plain links and directed relations", () => {
             const results = parseFixture("error-cases/malformed-relations.md");
             const result = results[0]!;
 
@@ -243,8 +243,70 @@ describe("Class Diagram Parser Integration", () => {
             expect(result.classes.map((c) => c.name)).toContain("Bar");
             expect(result.classes.map((c) => c.name)).toContain("Baz");
 
-            // Should only extract valid relations (skip malformed ones)
-            expect(result.relations.length).toBe(2); // Foo->Bar and Bar->Baz
+            // Should extract all relations including plain link
+            expect(result.relations.length).toBe(3); // Foo-->Bar, Bar-->Baz, Foo--Baz
+        });
+
+        it("should handle empty class bodies", () => {
+            const results = parseFixture("error-cases/empty-class-body.md");
+            const result = results[0]!;
+
+            expect(result.classes.length).toBeGreaterThanOrEqual(2);
+
+            const empty = result.classes.find((c) => c.name === "Empty");
+            expect(empty).toBeDefined();
+            expect(empty?.body.properties).toHaveLength(0);
+            expect(empty?.body.methods).toHaveLength(0);
+
+            const hasMembers = result.classes.find((c) => c.name === "HasMembers");
+            expect(hasMembers).toBeDefined();
+            expect(hasMembers?.body.properties).toHaveLength(1);
+        });
+
+        it("should handle missing closing braces gracefully", () => {
+            const results = parseFixture("error-cases/unclosed-braces.md");
+
+            // Parser handles the error internally and returns empty result
+            expect(results).toHaveLength(1);
+            expect(results[0]!.classes).toHaveLength(0);
+        });
+    });
+
+    // ============================================================
+    // Feature: Multiple Diagrams Per File
+    // ============================================================
+
+    describe("Multiple Diagrams Per File", () => {
+        it("should parse multiple class diagrams from one file", () => {
+            const results = parseFixture("multiple-diagrams.md");
+
+            expect(results).toHaveLength(3);
+
+            // First diagram: Alpha
+            expect(results[0]!.classes).toHaveLength(1);
+            expect(results[0]!.classes[0]?.name).toBe("Alpha");
+
+            // Second diagram: Beta, Gamma with relation
+            expect(results[1]!.classes).toHaveLength(2);
+            expect(results[1]!.classes.map((c) => c.name)).toContain("Beta");
+            expect(results[1]!.classes.map((c) => c.name)).toContain("Gamma");
+            expect(results[1]!.relations).toHaveLength(1);
+
+            // Third diagram: Delta
+            expect(results[2]!.classes).toHaveLength(1);
+            expect(results[2]!.classes[0]?.name).toBe("Delta");
+        });
+
+        it("should process each diagram independently", () => {
+            const results = parseFixture("multiple-diagrams.md");
+
+            // Each diagram should have its own isolated results
+            const allClassNames = results.flatMap((r) => r.classes.map((c) => c.name));
+            expect(allClassNames).toEqual(["Alpha", "Beta", "Gamma", "Delta"]);
+
+            // Relations from second diagram should not bleed into others
+            expect(results[0]!.relations).toHaveLength(0);
+            expect(results[2]!.relations).toHaveLength(0);
         });
     });
 
@@ -264,6 +326,27 @@ describe("Class Diagram Parser Integration", () => {
             // Class should have start line
             expect(result.classes[0]?.startLine).toBeDefined();
             expect(result.classes[0]?.startLine).toBeGreaterThan(0);
+        });
+
+        it("should track separate line numbers for multiple diagrams", () => {
+            const path = resolve(FIXTURES_DIR, "multiple-diagrams.md");
+            const content = readFileSync(path, "utf-8");
+            const parseResult = mdParser.parse(content, path);
+            const classDiagramBlocks = parseResult.blocks.filter(
+                (b) => b.language === "mermaid" && b.content.trim().startsWith("classDiagram")
+            );
+
+            expect(classDiagramBlocks.length).toBe(3);
+
+            // First block starts earlier in file than second
+            expect(classDiagramBlocks[0]!.startLine).toBeLessThan(classDiagramBlocks[1]!.startLine);
+            // Second block starts earlier than third
+            expect(classDiagramBlocks[1]!.startLine).toBeLessThan(classDiagramBlocks[2]!.startLine);
+
+            // Extract and verify class line numbers are relative to their blocks
+            const results = classDiagramBlocks.map((block) => classExtractor.extract(block));
+            expect(results[0]!.classes[0]?.startLine).toBeDefined();
+            expect(results[1]!.classes[0]?.startLine).toBeDefined();
         });
     });
 
