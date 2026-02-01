@@ -23,9 +23,19 @@ const CONFIG_FILENAMES = ["speckey.config.json", ".speckey.json"];
  */
 export class ConfigLoader {
     /**
-     * Find config file searching up from startDir to git root.
+     * Find config file using priority order:
+     * 1. SPECKEY_CONFIG env var
+     * 2. Search up from startDir to git root
+     * 3. User config (~/.config/speckey/config.json)
      */
     static findConfigFile(startDir: string = process.cwd()): string | undefined {
+        // Priority 1: SPECKEY_CONFIG env var
+        const envConfig = process.env.SPECKEY_CONFIG;
+        if (envConfig && existsSync(envConfig)) {
+            return envConfig;
+        }
+
+        // Priority 2: Walk up from startDir to git root
         let currentDir = resolve(startDir);
 
         while (true) {
@@ -49,7 +59,7 @@ export class ConfigLoader {
             currentDir = parentDir;
         }
 
-        // Check user config
+        // Priority 3: User config
         const homeDir = process.env.HOME;
         if (homeDir) {
             const userConfig = join(homeDir, ".config", "speckey", "config.json");
@@ -84,15 +94,19 @@ export class ConfigLoader {
 
     /**
      * Merge user config with defaults.
+     * Supports nested config structure (discovery.*, database.*) mapped to flat PipelineConfig.
      */
     private static mergeWithDefaults(
-        userConfig: Partial<PipelineConfig>,
+        userConfig: Record<string, unknown>,
     ): Omit<PipelineConfig, "paths"> {
+        // Support nested config structure
+        const discovery = (userConfig.discovery ?? {}) as Record<string, unknown>;
+
         return {
-            include: userConfig.include ?? DEFAULT_CONFIG.include,
-            exclude: userConfig.exclude ?? DEFAULT_CONFIG.exclude,
-            maxFiles: userConfig.maxFiles ?? DEFAULT_CONFIG.maxFiles,
-            maxFileSizeMb: userConfig.maxFileSizeMb ?? DEFAULT_CONFIG.maxFileSizeMb,
+            include: (discovery.include ?? userConfig.include ?? DEFAULT_CONFIG.include) as string[],
+            exclude: (discovery.exclude ?? userConfig.exclude ?? DEFAULT_CONFIG.exclude) as string[],
+            maxFiles: (discovery.max_file_count ?? userConfig.maxFiles ?? DEFAULT_CONFIG.maxFiles) as number,
+            maxFileSizeMb: (discovery.max_file_size_mb ?? userConfig.maxFileSizeMb ?? DEFAULT_CONFIG.maxFileSizeMb) as number,
         };
     }
 

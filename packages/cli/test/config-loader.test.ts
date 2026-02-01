@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ConfigLoader } from "../src/config-loader";
@@ -49,6 +49,53 @@ describe("ConfigLoader", () => {
             await rm(configPath);
             await rm(join(testDir, "nested"), { recursive: true });
         });
+
+        it("should use SPECKEY_CONFIG env var when set", async () => {
+            const envConfigPath = join(testDir, "env-config.json");
+            await writeFile(envConfigPath, JSON.stringify({ include: ["*.md"] }));
+
+            const originalEnv = process.env.SPECKEY_CONFIG;
+            process.env.SPECKEY_CONFIG = envConfigPath;
+
+            try {
+                const found = ConfigLoader.findConfigFile(testDir);
+                expect(found).toBe(envConfigPath);
+            } finally {
+                if (originalEnv === undefined) {
+                    delete process.env.SPECKEY_CONFIG;
+                } else {
+                    process.env.SPECKEY_CONFIG = originalEnv;
+                }
+                await rm(envConfigPath);
+            }
+        });
+
+        it("should prefer --config (caller) over SPECKEY_CONFIG", async () => {
+            // This tests that when a caller provides a path, it takes priority.
+            // The caller (CLI) checks --config before calling findConfigFile.
+            // findConfigFile itself checks SPECKEY_CONFIG first among auto-discovery.
+            const envConfigPath = join(testDir, "env-config.json");
+            const flagConfigPath = join(testDir, "flag-config.json");
+            await writeFile(envConfigPath, JSON.stringify({ include: ["env.md"] }));
+            await writeFile(flagConfigPath, JSON.stringify({ include: ["flag.md"] }));
+
+            const originalEnv = process.env.SPECKEY_CONFIG;
+            process.env.SPECKEY_CONFIG = envConfigPath;
+
+            try {
+                // When --config is provided, CLI passes it directly to load(), bypassing findConfigFile
+                const config = await ConfigLoader.load(flagConfigPath);
+                expect(config.include).toEqual(["flag.md"]);
+            } finally {
+                if (originalEnv === undefined) {
+                    delete process.env.SPECKEY_CONFIG;
+                } else {
+                    process.env.SPECKEY_CONFIG = originalEnv;
+                }
+                await rm(envConfigPath);
+                await rm(flagConfigPath);
+            }
+        });
     });
 
     // ============================================================
@@ -76,7 +123,6 @@ describe("ConfigLoader", () => {
 
             expect(config.include).toEqual(["docs/**/*.md"]);
             expect(config.maxFiles).toBe(500);
-            // Defaults for unspecified fields
             expect(config.exclude).toEqual(["**/node_modules/**"]);
 
             await rm(configPath);
@@ -104,11 +150,79 @@ describe("ConfigLoader", () => {
 
             await rm(configPath);
         });
+
+        it("should support nested config structure (discovery.*)", async () => {
+            const configPath = join(testDir, "nested.config.json");
+            await writeFile(configPath, JSON.stringify({
+                discovery: {
+                    exclude: ["**/test/**"],
+                    max_file_count: 5000,
+                    max_file_size_mb: 5,
+                },
+            }));
+
+            const config = await ConfigLoader.load(configPath);
+
+            expect(config.exclude).toEqual(["**/test/**"]);
+            expect(config.maxFiles).toBe(5000);
+            expect(config.maxFileSizeMb).toBe(5);
+
+            await rm(configPath);
+        });
+
+        it("should prefer nested discovery.* over flat fields", async () => {
+            const configPath = join(testDir, "mixed.config.json");
+            await writeFile(configPath, JSON.stringify({
+                maxFiles: 1000,
+                discovery: {
+                    max_file_count: 2000,
+                },
+            }));
+
+            const config = await ConfigLoader.load(configPath);
+
+            // Nested takes priority
+            expect(config.maxFiles).toBe(2000);
+
+            await rm(configPath);
+        });
     });
 
     // ============================================================
     // Feature: Config Merging
     // ============================================================
+
+    describe("Nested Config Mapping", () => {
+        it("should map discovery.max_file_size_mb to maxFileSizeMb", async () => {
+            const configPath = join(testDir, "size.config.json");
+            await writeFile(configPath, JSON.stringify({
+                discovery: {
+                    max_file_size_mb: 25,
+                },
+            }));
+
+            const config = await ConfigLoader.load(configPath);
+
+            expect(config.maxFileSizeMb).toBe(25);
+
+            await rm(configPath);
+        });
+
+        it("should map discovery.include to include", async () => {
+            const configPath = join(testDir, "include.config.json");
+            await writeFile(configPath, JSON.stringify({
+                discovery: {
+                    include: ["docs/**/*.md"],
+                },
+            }));
+
+            const config = await ConfigLoader.load(configPath);
+
+            expect(config.include).toEqual(["docs/**/*.md"]);
+
+            await rm(configPath);
+        });
+    });
 
     describe("mergeWithCLI", () => {
         it("should merge CLI exclude with base config", () => {

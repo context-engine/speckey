@@ -54,8 +54,13 @@ export class ClassExtractor {
 
             return { classes, relations, namespaces, notes };
         } catch (error) {
-            console.error("Failed to parse class diagram:", error);
-            return { classes: [], relations: [], namespaces: [], notes: [] };
+            const rawMessage = error instanceof Error ? error.message : String(error);
+            // Adjust mermaid-internal line numbers to markdown file line numbers
+            const parseError = rawMessage.replace(
+                /on line (\d+)/g,
+                (_, n) => `on line ${Number(n) + lineOffset}`,
+            );
+            return { classes: [], relations: [], namespaces: [], notes: [], parseError };
         }
     }
 

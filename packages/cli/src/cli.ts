@@ -1,32 +1,40 @@
 import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
+import type { WriteConfig } from "@speckey/database";
 import { parseArgs } from "./args";
 import { ConfigLoader, DEFAULT_CONFIG } from "./config-loader";
 import { ProgressReporter } from "./progress-reporter";
-import { ExitCode, type OutputMode, type ParseOptions } from "./types";
+import { Command, ExitCode, type OutputMode, type ParseOptions } from "./types";
 
 const VERSION = "0.1.0";
 
 const HELP_TEXT = `
-speckey - Parse markdown files for mermaid diagrams
+speckey - Parse and validate mermaid class diagrams from markdown
 
 Usage:
-  speckey parse [paths...] [options]
+  speckey <command> [paths...] [options]
+
+Commands:
+  parse       Parse markdown files (phases 1-3)
+  validate    Parse and validate references (phases 1-4)
+  sync        Parse, validate, and write to database (phases 1-5)
 
 Options:
-  --config <path>   Use specific config file
-  --exclude <glob>  Additional exclusion patterns (can be repeated)
-  --verbose         Show detailed output
-  --quiet           Show errors only
-  --json            Output as JSON lines
-  --serial          Process files sequentially
-  --no-config       Skip config file loading
-  --help            Show this help
-  --version         Show version
+  --config <path>     Use specific config file
+  --db-path <path>    Database path (sync command only)
+  --exclude <glob>    Additional exclusion patterns (can be repeated)
+  --workers <n>       Worker count (1-32, default: auto)
+  --verbose, -v       Show detailed output
+  --quiet, -q         Show errors only
+  --json              Output as JSON lines
+  --serial            Process files sequentially
+  --no-config         Skip config file loading
+  --help, -h          Show this help
+  --version           Show version
 
 Examples:
   speckey parse .
-  speckey parse ./docs ./specs
-  speckey parse . --exclude "*.test.md"
+  speckey validate ./docs ./specs
+  speckey sync ./specs --db-path ./speckey.db
 `.trim();
 
 /**
@@ -63,10 +71,10 @@ export class CLI {
             return ExitCode.SUCCESS;
         }
 
-        // Load configuration
+        // Build configuration based on command
         let config: PipelineConfig;
         try {
-            config = await this.loadConfig(options);
+            config = await this.buildConfig(options.command, options);
         } catch (error) {
             console.error(`Config error: ${error instanceof Error ? error.message : error}`);
             return ExitCode.CONFIG_ERROR;
@@ -79,25 +87,20 @@ export class CLI {
         // Run pipeline
         const result = await this.pipeline.run(config);
 
-        // Display result
-        this.displayResult(result, reporter, mode);
+        // Display command-specific result
+        this.displayResult(options.command, result, reporter, mode);
 
         // Determine exit code
-        if (result.errors.length > 0) {
-            return ExitCode.PARSE_ERROR;
-        }
-
-        if (result.stats.filesDiscovered === 0) {
-            if (mode !== "quiet" && mode !== "json") {
-                console.error("No files found");
-            }
-            return ExitCode.PARSE_ERROR;
-        }
-
-        return ExitCode.SUCCESS;
+        return this.getExitCode(options.command, result);
     }
 
-    private async loadConfig(options: ParseOptions): Promise<PipelineConfig> {
+    /**
+     * Build PipelineConfig based on command and options.
+     * - PARSE: skipValidation=true, no writeConfig
+     * - VALIDATE: skipValidation=false, no writeConfig
+     * - SYNC: skipValidation=false, writeConfig from options/config
+     */
+    async buildConfig(command: Command, options: ParseOptions): Promise<PipelineConfig> {
         let baseConfig: Omit<PipelineConfig, "paths">;
 
         if (options.noConfig) {
@@ -109,10 +112,35 @@ export class CLI {
 
         const merged = ConfigLoader.mergeWithCLI(baseConfig, options.exclude);
 
-        return {
+        const config: PipelineConfig = {
             ...merged,
             paths: options.paths,
         };
+
+        // Command-specific config flags
+        switch (command) {
+            case Command.PARSE:
+                config.skipValidation = true;
+                break;
+            case Command.VALIDATE:
+                config.skipValidation = false;
+                break;
+            case Command.SYNC: {
+                config.skipValidation = false;
+                const dbPath = options.dbPath;
+                if (!dbPath) {
+                    throw new Error("Database path required for sync. Use --db-path or set database.path in config");
+                }
+                config.writeConfig = {
+                    dbPath,
+                    orphanedEntities: "keep",
+                    backupBeforeWrite: true,
+                } as WriteConfig;
+                break;
+            }
+        }
+
+        return config;
     }
 
     private getOutputMode(options: ParseOptions): OutputMode {
@@ -122,10 +150,29 @@ export class CLI {
         return "normal";
     }
 
-    private displayResult(result: PipelineResult, reporter: ProgressReporter, mode: OutputMode): void {
+    private displayResult(command: Command, result: PipelineResult, reporter: ProgressReporter, mode: OutputMode): void {
         for (const error of result.errors) {
             reporter.error(error);
         }
-        reporter.complete(result);
+        reporter.complete(command, result);
+    }
+
+    private getExitCode(command: Command, result: PipelineResult): number {
+        if (result.errors.length > 0) {
+            return ExitCode.PARSE_ERROR;
+        }
+
+        if (result.stats.filesDiscovered === 0) {
+            return ExitCode.PARSE_ERROR;
+        }
+
+        // Validate/sync: check validation report
+        if (command === Command.VALIDATE || command === Command.SYNC) {
+            if (result.validationReport && result.validationReport.unresolved.length > 0) {
+                return ExitCode.PARSE_ERROR;
+            }
+        }
+
+        return ExitCode.SUCCESS;
     }
 }

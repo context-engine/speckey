@@ -1,4 +1,13 @@
 /**
+ * CLI subcommand identifying which operation to perform.
+ */
+export enum Command {
+    PARSE = "parse",
+    VALIDATE = "validate",
+    SYNC = "sync",
+}
+
+/**
  * Exit codes for CLI process.
  */
 export enum ExitCode {
@@ -11,12 +20,15 @@ export enum ExitCode {
  * Parsed CLI arguments.
  */
 export interface ParseOptions {
+    command: Command;
     paths: string[];
     configPath?: string;
+    dbPath?: string;
     verbose: boolean;
     quiet: boolean;
     json: boolean;
     serial: boolean;
+    workers?: number;
     noConfig: boolean;
     exclude: string[];
     help: boolean;

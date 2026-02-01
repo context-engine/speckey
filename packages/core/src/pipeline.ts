@@ -137,49 +137,67 @@ export class ParsePipeline {
         for (const routedBlock of file.blocks) {
             if (routedBlock.diagramType !== DiagramType.CLASS_DIAGRAM) continue;
 
-            // Phase 3a.0: Extract parsed classes from mermaid block
-            const diagramResult = this.classExtractor.extract(routedBlock.block);
+            try {
+                // Phase 3a.0: Extract parsed classes from mermaid block
+                const diagramResult = this.classExtractor.extract(routedBlock.block);
 
-            if (diagramResult.classes.length === 0) continue;
-
-            // Phase 3a.1: Unit validation
-            const validationReport = this.classDiagramValidator.validate(diagramResult);
-
-            if (validationReport.validClasses.length === 0) continue;
-
-            // Build currentDiagramClasses map from valid classes
-            const currentDiagramClasses = new Map<string, string>();
-            for (const cls of validationReport.validClasses) {
-                const address = cls.annotations?.address;
-                if (address) {
-                    currentDiagramClasses.set(cls.name, `${address}.${cls.name}`);
+                if (diagramResult.parseError) {
+                    errors.push({
+                        phase: "extract",
+                        path: file.path,
+                        message: diagramResult.parseError,
+                        code: "PARSE_FAILURE",
+                    });
                 }
-            }
 
-            // Phase 3a.2: Build entities
-            const entityBuilder = new EntityBuilder();
-            const buildResult = entityBuilder.buildClassSpecs(
-                validationReport.validClasses,
-                diagramResult.relations,
-                {
-                    registry,
-                    deferredQueue,
-                    typeResolver,
-                    currentDiagramClasses,
-                    specFile: file.path,
-                },
-            );
+                if (diagramResult.classes.length === 0) continue;
 
-            for (const err of buildResult.errors) {
+                // Phase 3a.1: Unit validation
+                const validationReport = this.classDiagramValidator.validate(diagramResult);
+
+                if (validationReport.validClasses.length === 0) continue;
+
+                // Build currentDiagramClasses map from valid classes
+                const currentDiagramClasses = new Map<string, string>();
+                for (const cls of validationReport.validClasses) {
+                    const address = cls.annotations?.address;
+                    if (address) {
+                        currentDiagramClasses.set(cls.name, `${address}.${cls.name}`);
+                    }
+                }
+
+                // Phase 3a.2: Build entities
+                const entityBuilder = new EntityBuilder();
+                const buildResult = entityBuilder.buildClassSpecs(
+                    validationReport.validClasses,
+                    diagramResult.relations,
+                    {
+                        registry,
+                        deferredQueue,
+                        typeResolver,
+                        currentDiagramClasses,
+                        specFile: file.path,
+                    },
+                );
+
+                for (const err of buildResult.errors) {
+                    errors.push({
+                        phase: "build",
+                        path: file.path,
+                        message: err.message,
+                        code: err.code,
+                    });
+                }
+
+                allClassSpecs.push(...buildResult.classSpecs);
+            } catch (error) {
                 errors.push({
-                    phase: "build",
+                    phase: "extract",
                     path: file.path,
-                    message: err.message,
-                    code: err.code,
+                    message: error instanceof Error ? error.message : String(error),
+                    code: "PARSE_FAILURE",
                 });
             }
-
-            allClassSpecs.push(...buildResult.classSpecs);
         }
     }
 

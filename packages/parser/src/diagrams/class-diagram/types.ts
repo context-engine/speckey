@@ -97,4 +97,5 @@ export interface ClassDiagramResult {
     relations: ParsedRelation[];
     namespaces: ParsedNamespace[];
     notes: ParsedNote[];
+    parseError?: string;
 }

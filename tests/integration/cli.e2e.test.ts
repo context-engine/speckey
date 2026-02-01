@@ -38,7 +38,7 @@ describe("CLI E2E", () => {
 
     describe("Success Cases", () => {
         it("should succeed with real files", async () => {
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "simple-spec")]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "simple-spec"), "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.SUCCESS);
             // Should output summary
@@ -47,15 +47,17 @@ describe("CLI E2E", () => {
 
         it("should succeed with multiple paths", async () => {
             const exitCode = await cli.run([
+                "parse",
                 resolve(FIXTURES_DIR, "simple-spec"),
                 resolve(FIXTURES_DIR, "multi-file-spec"),
+                "--no-config",
             ]);
 
             expect(exitCode).toBe(ExitCode.SUCCESS);
         });
 
         it("should succeed with nested directories", async () => {
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "nested-spec")]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "nested-spec"), "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.SUCCESS);
         });
@@ -67,14 +69,13 @@ describe("CLI E2E", () => {
 
     describe("Error Cases", () => {
         it("should fail with non-existent path", async () => {
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "non-existent"), "--quiet"]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "non-existent"), "--quiet", "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });
 
         it("should fail with empty directory", async () => {
-            // Use nested-spec/subdir/deep as parent for a non-existent deeper path
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "non-existent-dir"), "--quiet"]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "non-existent-dir"), "--quiet", "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });
@@ -86,7 +87,7 @@ describe("CLI E2E", () => {
 
     describe("JSON Output Mode", () => {
         it("should output valid JSON lines with --json flag", async () => {
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "simple-spec"), "--json"]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "simple-spec"), "--json", "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.SUCCESS);
 
@@ -99,7 +100,7 @@ describe("CLI E2E", () => {
         });
 
         it("should include complete message in JSON output", async () => {
-            await cli.run([resolve(FIXTURES_DIR, "simple-spec"), "--json"]);
+            await cli.run(["parse", resolve(FIXTURES_DIR, "simple-spec"), "--json", "--no-config"]);
 
             const completeLine = consoleLogs.find((log) => log.includes("complete"));
             expect(completeLine).toBeDefined();
@@ -117,7 +118,7 @@ describe("CLI E2E", () => {
 
     describe("Verbose Mode", () => {
         it("should show file processing in verbose mode", async () => {
-            const exitCode = await cli.run([resolve(FIXTURES_DIR, "simple-spec"), "--verbose"]);
+            const exitCode = await cli.run(["parse", resolve(FIXTURES_DIR, "simple-spec"), "--verbose", "--no-config"]);
 
             expect(exitCode).toBe(ExitCode.SUCCESS);
             // Should have more output in verbose mode
@@ -131,7 +132,7 @@ describe("CLI E2E", () => {
 
     describe("Quiet Mode", () => {
         it("should suppress output in quiet mode", async () => {
-            await cli.run([resolve(FIXTURES_DIR, "simple-spec"), "--quiet"]);
+            await cli.run(["parse", resolve(FIXTURES_DIR, "simple-spec"), "--quiet", "--no-config"]);
 
             // Should have minimal output (no progress, just errors if any)
             expect(consoleLogs.length).toBe(0);
