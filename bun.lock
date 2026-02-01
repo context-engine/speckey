@@ -24,6 +24,7 @@
       "name": "@speckey/core",
       "version": "0.1.0",
       "dependencies": {
+        "@speckey/database": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
       },

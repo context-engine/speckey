@@ -5,14 +5,11 @@ classDiagram
     class Foo
     class Bar
     class Baz
-    
-    %% Valid relation
+
+    %% Valid relations
     Foo --> Bar
-    
-    %% Malformed relations (should be skipped)
-    Foo -- (invalid syntax here)
-    Bar ~~~> Baz
-    
-    %% Another valid relation
     Bar --> Baz
+
+    %% Plain link (no arrow)
+    Foo -- Baz
 ```

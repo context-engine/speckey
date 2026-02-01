@@ -8,8 +8,8 @@ classDiagram
         +reset()$
     }
     
-    <<abstract>>
     class Shape {
+        <<abstract>>
         +draw()*
         +getArea() float*
         +getName() string
