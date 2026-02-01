@@ -21,8 +21,12 @@ export class Transaction {
 
 	/**
 	 * Record an operation within this transaction.
+	 * Throws if the transaction is not ACTIVE.
 	 */
 	addOperation(op: Operation): void {
+		if (this.status !== TransactionStatus.ACTIVE) {
+			throw new Error(`Cannot add operation to transaction in status: ${this.status}`);
+		}
 		this.operations.push(op);
 	}
 }

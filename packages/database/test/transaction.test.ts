@@ -100,6 +100,20 @@ describe("TransactionManager", () => {
 			tx.addOperation(makeOperation({ entityFqn: "a.T" }));
 			expect(tx.operations[0].timestamp.getTime()).toBeGreaterThanOrEqual(before.getTime());
 		});
+
+		it("rejects operation on COMMITTED transaction", () => {
+			const tx = manager.begin();
+			manager.commit(tx);
+			expect(() => tx.addOperation(makeOperation({ entityFqn: "a.X" }))).toThrow();
+			expect(tx.operations).toHaveLength(0);
+		});
+
+		it("rejects operation on ROLLED_BACK transaction", () => {
+			const tx = manager.begin();
+			manager.rollback(tx);
+			expect(() => tx.addOperation(makeOperation({ entityFqn: "a.X" }))).toThrow();
+			expect(tx.operations).toHaveLength(0);
+		});
 	});
 
 	// ── TM-300: Commit ──
@@ -140,6 +154,31 @@ describe("TransactionManager", () => {
 			expect(result.success).toBe(false);
 			expect(tx.status).toBe(TransactionStatus.ROLLED_BACK);
 		});
+
+		it("commit failure sets status to FAILED", () => {
+			const tx = manager.begin();
+			// Simulate Dgraph commit failure by making status setter throw during commit
+			const origStatus = Object.getOwnPropertyDescriptor(tx, "status");
+			let callCount = 0;
+			Object.defineProperty(tx, "status", {
+				get() { return origStatus?.value; },
+				set(val) {
+					callCount++;
+					if (callCount === 1 && val === TransactionStatus.COMMITTED) {
+						// Restore so FAILED can be set
+						Object.defineProperty(tx, "status", { value: TransactionStatus.ACTIVE, writable: true, configurable: true });
+						throw new Error("Dgraph commit failed");
+					}
+					Object.defineProperty(tx, "status", { value: val, writable: true, configurable: true });
+				},
+				configurable: true,
+			});
+
+			const result = manager.commit(tx);
+			expect(result.success).toBe(false);
+			expect(result.error).toBeTruthy();
+			expect(tx.status).toBe(TransactionStatus.FAILED);
+		});
 	});
 
 	// ── TM-400: Rollback ──
@@ -179,6 +218,29 @@ describe("TransactionManager", () => {
 			const result = manager.rollback(tx);
 			expect(result.success).toBe(false);
 			expect(tx.status).toBe(TransactionStatus.ROLLED_BACK);
+		});
+
+		it("rollback failure sets status to FAILED", () => {
+			const tx = manager.begin();
+			const origStatus = Object.getOwnPropertyDescriptor(tx, "status");
+			let callCount = 0;
+			Object.defineProperty(tx, "status", {
+				get() { return origStatus?.value; },
+				set(val) {
+					callCount++;
+					if (callCount === 1 && val === TransactionStatus.ROLLED_BACK) {
+						Object.defineProperty(tx, "status", { value: TransactionStatus.ACTIVE, writable: true, configurable: true });
+						throw new Error("Dgraph rollback failed");
+					}
+					Object.defineProperty(tx, "status", { value: val, writable: true, configurable: true });
+				},
+				configurable: true,
+			});
+
+			const result = manager.rollback(tx);
+			expect(result.success).toBe(false);
+			expect(result.error).toBeTruthy();
+			expect(tx.status).toBe(TransactionStatus.FAILED);
 		});
 	});
 
