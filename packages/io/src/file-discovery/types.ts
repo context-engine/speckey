@@ -42,6 +42,11 @@ export interface DiscoveredFiles {
 	 * Errors encountered during discovery.
 	 */
 	errors: DiscoveryError[];
+	/**
+	 * True if file count exceeds the configured maxFiles limit.
+	 * The caller (CLI) should decide whether to prompt or abort.
+	 */
+	exceededFileLimit: boolean;
 }
 
 /**
@@ -97,8 +102,6 @@ export enum SkipReason {
 	EXCLUDED_PATTERN = "excluded_pattern",
 	TOO_LARGE = "too_large",
 	NOT_MARKDOWN = "not_markdown",
-	PERMISSION_DENIED = "permission_denied",
-	INVALID_ENCODING = "invalid_encoding",
 }
 
 /**

@@ -1,3 +1,4 @@
+import { accessSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Glob } from "bun";
 import {
@@ -17,6 +18,8 @@ function toUserMessage(code: string): UserErrorMessage {
 			return DiscoveryErrors.PERMISSION_DENIED;
 		case "INVALID_ENCODING":
 			return DiscoveryErrors.INVALID_ENCODING;
+		case "INVALID_GLOB_SYNTAX":
+			return DiscoveryErrors.INVALID_GLOB_SYNTAX;
 		default:
 			return DiscoveryErrors.UNEXPECTED_ERROR;
 	}
@@ -34,10 +37,18 @@ export class FileDiscovery {
 			files: [],
 			skipped: [],
 			errors: [],
+			exceededFileLimit: false,
 		};
 
 		try {
 			const rootDir = resolve(config.rootDir);
+
+			// 0. Validate root path exists before scanning
+			const configError = this.validateConfig(rootDir, config.rootDir);
+			if (configError) {
+				result.errors.push(configError);
+				return result;
+			}
 
 			// 1. Expand glob patterns
 			const allMatchedFiles = await this.applyGlobPatterns(
@@ -60,7 +71,7 @@ export class FileDiscovery {
 
 			// 4. Limit check (Warning logic is expected at CLI level, but we can cap it or mark as error if strict)
 			// According to specs, validateFileLimit is a private method.
-			this.validateFileLimit(result.files, config.maxFiles);
+			this.validateFileLimit(result, config.maxFiles);
 		} catch (error: unknown) {
 			const message =
 				error instanceof Error
@@ -78,6 +89,23 @@ export class FileDiscovery {
 		return result;
 	}
 
+	private validateConfig(
+		rootDir: string,
+		originalPath: string,
+	): DiscoveredFiles["errors"][number] | null {
+		try {
+			accessSync(rootDir);
+		} catch {
+			return {
+				path: originalPath,
+				message: `Path does not exist: ${rootDir}`,
+				code: "ENOENT",
+				userMessage: toUserMessage("ENOENT"),
+			};
+		}
+		return null;
+	}
+
 	private async applyGlobPatterns(
 		patterns: string[],
 		rootDir: string,
@@ -85,7 +113,19 @@ export class FileDiscovery {
 		const matchedFilesSet = new Set<string>();
 
 		for (const pattern of patterns) {
-			const glob = new Glob(pattern);
+			let glob: Glob;
+			try {
+				glob = new Glob(pattern);
+			} catch (error: unknown) {
+				const message =
+					error instanceof Error
+						? error.message
+						: `Invalid glob pattern: ${pattern}`;
+				throw Object.assign(new Error(message), {
+					code: "INVALID_GLOB_SYNTAX",
+				});
+			}
+
 			const matches = glob.scan({
 				cwd: rootDir,
 				onlyFiles: true,
@@ -252,13 +292,12 @@ export class FileDiscovery {
 		return result;
 	}
 
-	private validateFileLimit(files: string[], limit: number): void {
-		// Specs say: "Warn/confirm if exceeds limit"
-		// Since this is a logic module, we just keep the files but could potentially truncate
-		// or at least we've identified the count. The requirement for interactivity belongs to CLI.
-		if (files.length > limit) {
-			// We can log a warning or just let the caller handle it.
-			// For now, we fulfill the method signature.
+	private validateFileLimit(
+		result: DiscoveredFiles,
+		limit: number,
+	): void {
+		if (result.files.length > limit) {
+			result.exceededFileLimit = true;
 		}
 	}
 }

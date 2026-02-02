@@ -1,3 +1,4 @@
+import { extname } from "node:path";
 import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
 import type { WriteConfig } from "@speckey/database";
 import { parseArgs } from "./args";
@@ -111,6 +112,17 @@ export class CLI {
         }
 
         const merged = ConfigLoader.mergeWithCLI(baseConfig, options.exclude);
+
+        // Single-file .md validation: if a single path with a file extension
+        // is provided and it's not .md, give a clear error instead of a confusing
+        // "no markdown files found" later.
+        if (options.paths.length === 1) {
+            const singlePath = options.paths[0];
+            const ext = singlePath ? extname(singlePath) : "";
+            if (ext && ext.toLowerCase() !== ".md") {
+                throw new Error(`Not a markdown file: "${singlePath}". Expected .md extension`);
+            }
+        }
 
         const config: PipelineConfig = {
             ...merged,
