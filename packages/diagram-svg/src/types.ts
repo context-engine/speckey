@@ -44,6 +44,35 @@ export interface Theme {
 
   /** Minimum node height */
   nodeMinHeight: number;
+
+  // ---- Sequence diagram properties ----
+
+  /** Horizontal gap between actors (default 200) */
+  actorSpacing: number;
+
+  /** Vertical gap between messages (default 50) */
+  messageSpacing: number;
+
+  /** Lifeline stroke color */
+  lifelineStroke: string;
+
+  /** Lifeline dash pattern */
+  lifelineDash: string;
+
+  /** Activation box fill color */
+  activationFill: string;
+
+  /** Block (loop/alt/opt) fill color */
+  blockFill: string;
+
+  /** Block stroke color */
+  blockStroke: string;
+
+  /** Note fill color */
+  noteFill: string;
+
+  /** Note stroke color */
+  noteStroke: string;
 }
 
 /**

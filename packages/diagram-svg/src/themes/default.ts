@@ -31,6 +31,17 @@ export const defaultTheme: Theme = {
   nodePadding: 8,
   nodeMinWidth: 50,
   nodeMinHeight: 30,
+
+  // Sequence diagram
+  actorSpacing: 200,
+  messageSpacing: 50,
+  lifelineStroke: '#999999',
+  lifelineDash: '6,4',
+  activationFill: '#ECF0FF',
+  blockFill: '#f8f8f8',
+  blockStroke: '#aaaaaa',
+  noteFill: '#FFFFCC',
+  noteStroke: '#CCCC99',
 };
 
 /**
