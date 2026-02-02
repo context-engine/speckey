@@ -150,6 +150,9 @@ export class ProgressReporter {
     }
 
     private formatError(error: PipelineError): string {
-        return `[${error.phase}] ${error.path}: ${error.message}`;
+        if (this.mode === "quiet") {
+            return `[${error.phase}] ${error.path}: ${error.message}`;
+        }
+        return `[${error.phase}] ${error.path}: ${error.userMessage}\n  ${error.message}`;
     }
 }

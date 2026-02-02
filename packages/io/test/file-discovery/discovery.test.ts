@@ -80,18 +80,21 @@ describe("FileDiscovery", () => {
 		});
 
 		it("should handle non-existent directory", async () => {
+			const nonExistentPath = join(testDir, "non-existent-dir");
 			const config = {
 				include: ["**/*.md"],
 				exclude: [],
 				maxFiles: 100,
 				maxFileSizeMb: 10,
-				rootDir: join(testDir, "non-existent-dir"),
+				rootDir: nonExistentPath,
 			};
 
 			const result = await discovery.discover(config);
 
 			// Should have empty files, may have error
 			expect(result.files).toHaveLength(0);
+			expect(result.errors.length).toBeGreaterThanOrEqual(1);
+			expect(result.errors[0]?.userMessage).toBe(`Path does not exist: ${nonExistentPath}`);
 		});
 
 		it("should recursively discover files in nested subdirectories", async () => {
@@ -341,6 +344,8 @@ describe("FileDiscovery", () => {
 			const result = await discovery.discover(config);
 
 			expect(result.files).toHaveLength(0);
+			expect(result.errors.length).toBeGreaterThanOrEqual(1);
+			expect(result.errors[0]?.userMessage).toBe("Path does not exist: /nonexistent/absolute/path");
 		});
 
 		it("should report errors in result.errors", async () => {
@@ -480,6 +485,7 @@ describe("FileDiscovery", () => {
 			expect(result.contents).toHaveLength(0);
 			expect(result.errors).toHaveLength(1);
 			expect(result.errors[0]?.code).toBe("ENOENT");
+			expect(result.errors[0]?.userMessage).toBe("Path does not exist: /nonexistent/file.md");
 		});
 
 		it("should preserve file path in result", async () => {

@@ -95,6 +95,7 @@ export class ParsePipeline {
                     path: "",
                     message: err.message,
                     code: err.code,
+                    userMessage: err.message, // TODO: add proper userMessage to integration validation errors
                 });
             }
         }
@@ -147,6 +148,7 @@ export class ParsePipeline {
                         path: file.path,
                         message: diagramResult.parseError,
                         code: "PARSE_FAILURE",
+                        userMessage: diagramResult.parseError, // TODO: add proper userMessage to extract errors
                     });
                 }
 
@@ -186,16 +188,19 @@ export class ParsePipeline {
                         path: file.path,
                         message: err.message,
                         code: err.code,
+                        userMessage: err.message, // TODO: add proper userMessage to build errors
                     });
                 }
 
                 allClassSpecs.push(...buildResult.classSpecs);
             } catch (error) {
+                const msg = error instanceof Error ? error.message : String(error);
                 errors.push({
                     phase: "extract",
                     path: file.path,
-                    message: error instanceof Error ? error.message : String(error),
+                    message: msg,
                     code: "PARSE_FAILURE",
+                    userMessage: msg, // TODO: add proper userMessage to extract catch errors
                 });
             }
         }
@@ -218,6 +223,7 @@ export class ParsePipeline {
                 path: "",
                 message: err.message,
                 code: err.code,
+                userMessage: err.message, // TODO: add proper userMessage to write errors
             });
         }
 
@@ -255,6 +261,7 @@ export class ParsePipeline {
                     path: err.path,
                     message: err.message,
                     code: err.code,
+                    userMessage: err.userMessage,
                 });
             }
 
@@ -281,6 +288,7 @@ export class ParsePipeline {
                 path: err.path,
                 message: err.message,
                 code: err.code,
+                userMessage: err.userMessage,
             });
         }
 
@@ -309,6 +317,7 @@ export class ParsePipeline {
                         path: file.path,
                         message: err.message,
                         code: `LINE_${err.line}`,
+                        userMessage: err.message, // TODO: add proper userMessage to parse errors
                     });
                 }
                 // Skip files with actual errors

@@ -108,12 +108,16 @@ export interface DiscoveryError {
 	 */
 	path: string;
 	/**
-	 * Error message.
+	 * Raw system error message.
 	 */
 	message: string;
 	/**
-	 * Error code (e.g., ENOENT, EACCES).
+	 * System error code (e.g., ENOENT, EACCES).
 	 */
 	code: string;
+	/**
+	 * Human-friendly error description.
+	 */
+	userMessage: string;
 }
 

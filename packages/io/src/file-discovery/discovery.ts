@@ -8,6 +8,19 @@ import {
 	SkipReason,
 } from "./types";
 
+function toUserMessage(code: string, path: string): string {
+	switch (code) {
+		case "ENOENT":
+			return `Path does not exist: ${path}`;
+		case "EACCES":
+			return `Permission denied: ${path}`;
+		case "INVALID_ENCODING":
+			return `Invalid UTF-8 encoding: ${path}`;
+		default:
+			return `Unexpected error accessing: ${path}`;
+	}
+}
+
 /**
  * High-performance file discovery using Bun APIs.
  */
@@ -47,6 +60,7 @@ export class FileDiscovery {
 				path: config.rootDir,
 				message,
 				code,
+				userMessage: toUserMessage(code, config.rootDir),
 			});
 		}
 
@@ -130,6 +144,7 @@ export class FileDiscovery {
 					path: filePath,
 					message: "File does not exist",
 					code: "ENOENT",
+					userMessage: toUserMessage("ENOENT", filePath),
 				});
 				return;
 			}
@@ -145,6 +160,7 @@ export class FileDiscovery {
 				path: filePath,
 				message,
 				code,
+				userMessage: toUserMessage(code, filePath),
 			});
 		}
 	}
@@ -173,6 +189,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "File does not exist",
 						code: "ENOENT",
+						userMessage: toUserMessage("ENOENT", filePath),
 					});
 					continue;
 				}
@@ -199,6 +216,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "Invalid UTF-8 encoding",
 						code: "INVALID_ENCODING",
+						userMessage: toUserMessage("INVALID_ENCODING", filePath),
 					});
 					continue;
 				}
@@ -215,6 +233,7 @@ export class FileDiscovery {
 					path: filePath,
 					message,
 					code,
+					userMessage: toUserMessage(code, filePath),
 				});
 			}
 		}

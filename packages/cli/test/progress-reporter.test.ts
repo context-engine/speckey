@@ -336,6 +336,7 @@ describe("ProgressReporter", () => {
                 path: "/path/to/file.md",
                 message: "Permission denied",
                 code: "EACCES",
+                userMessage: "Permission denied: /path/to/file.md",
             };
 
             reporter.error(error);
@@ -345,6 +346,58 @@ describe("ProgressReporter", () => {
             )).toBe(true);
         });
 
+        it("should display both userMessage and system message by default", () => {
+            const reporter = new ProgressReporter("normal");
+            const error: PipelineError = {
+                phase: "discovery",
+                path: "/bad/path",
+                message: "ENOENT: no such file or directory",
+                code: "ENOENT",
+                userMessage: "Path does not exist: /bad/path",
+            };
+
+            reporter.error(error);
+
+            const output = consoleErrors.join("\n");
+            expect(output).toInclude("[discovery]");
+            expect(output).toInclude("/bad/path");
+            expect(output).toInclude("Path does not exist: /bad/path");
+            expect(output).toInclude("ENOENT: no such file or directory");
+        });
+
+        it("should display both userMessage and system message in verbose mode", () => {
+            const reporter = new ProgressReporter("verbose");
+            const error: PipelineError = {
+                phase: "discovery",
+                path: "/bad/path",
+                message: "ENOENT: no such file or directory",
+                code: "ENOENT",
+                userMessage: "Path does not exist: /bad/path",
+            };
+
+            reporter.error(error);
+
+            const output = consoleErrors.join("\n");
+            expect(output).toInclude("Path does not exist: /bad/path");
+            expect(output).toInclude("ENOENT: no such file or directory");
+        });
+
+        it("should display only system message in quiet mode", () => {
+            const reporter = new ProgressReporter("quiet");
+            const error: PipelineError = {
+                phase: "discovery",
+                path: "/bad/path",
+                message: "ENOENT: no such file or directory",
+                code: "ENOENT",
+                userMessage: "Path does not exist: /bad/path",
+            };
+
+            reporter.error(error);
+
+            const output = consoleErrors.join("\n");
+            expect(output).toInclude("[discovery] /bad/path: ENOENT: no such file or directory");
+        });
+
         it("should output JSON error in json mode", () => {
             const reporter = new ProgressReporter("json");
             const error: PipelineError = {
@@ -352,6 +405,7 @@ describe("ProgressReporter", () => {
                 path: "/path/to/file.md",
                 message: "Invalid syntax",
                 code: "PARSE_ERROR",
+                userMessage: "Unexpected error accessing: /path/to/file.md",
             };
 
             reporter.error(error);
@@ -361,6 +415,7 @@ describe("ProgressReporter", () => {
             const parsed = JSON.parse(jsonLine!);
             expect(parsed.type).toBe("error");
             expect(parsed.error.phase).toBe("parse");
+            expect(parsed.error.userMessage).toBe("Unexpected error accessing: /path/to/file.md");
         });
     });
 });
