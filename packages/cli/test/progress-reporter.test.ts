@@ -362,7 +362,7 @@ describe("ProgressReporter", () => {
             const output = consoleErrors.join("\n");
             expect(output).toInclude("[discovery]");
             expect(output).toInclude("/bad/path");
-            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND);
+            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND[0]!);
             expect(output).toInclude("ENOENT: no such file or directory");
         });
 
@@ -379,7 +379,7 @@ describe("ProgressReporter", () => {
             reporter.error(error);
 
             const output = consoleErrors.join("\n");
-            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND);
+            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND[0]!);
             expect(output).toInclude("ENOENT: no such file or directory");
         });
 
@@ -416,7 +416,7 @@ describe("ProgressReporter", () => {
             const parsed = JSON.parse(jsonLine!);
             expect(parsed.type).toBe("error");
             expect(parsed.error.phase).toBe("parse");
-            expect(parsed.error.userMessage).toBe(DiscoveryErrors.UNEXPECTED_ERROR);
+            expect(parsed.error.userMessage).toEqual(DiscoveryErrors.UNEXPECTED_ERROR);
         });
     });
 });

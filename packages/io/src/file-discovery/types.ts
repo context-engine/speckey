@@ -1,3 +1,5 @@
+import type { UserErrorMessage } from "@speckey/errors";
+
 /**
  * Configuration for file discovery.
  */
@@ -118,6 +120,6 @@ export interface DiscoveryError {
 	/**
 	 * Human-friendly error description.
 	 */
-	userMessage: string;
+	userMessage: UserErrorMessage;
 }
 

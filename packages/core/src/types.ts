@@ -1,4 +1,5 @@
 import type { RoutedBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
+import type { UserErrorMessage } from "@speckey/errors";
 import type { ClassSpec } from "./package-registry/types";
 import type { WriteConfig, WriteResult } from "@speckey/database";
 
@@ -138,7 +139,7 @@ export interface PipelineError {
     /**
      * Human-friendly error description.
      */
-    userMessage: string;
+    userMessage: UserErrorMessage;
 }
 
 /**

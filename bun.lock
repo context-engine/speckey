@@ -27,6 +27,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@speckey/database": "workspace:*",
+        "@speckey/errors": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
       },

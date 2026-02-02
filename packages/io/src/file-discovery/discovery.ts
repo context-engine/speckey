@@ -7,9 +7,9 @@ import {
 	type FileContents,
 	SkipReason,
 } from "./types";
-import { DiscoveryErrors } from "@speckey/errors";
+import { DiscoveryErrors, type UserErrorMessage } from "@speckey/errors";
 
-function toUserMessage(code: string): string {
+function toUserMessage(code: string): UserErrorMessage {
 	switch (code) {
 		case "ENOENT":
 			return DiscoveryErrors.PATH_NOT_FOUND;

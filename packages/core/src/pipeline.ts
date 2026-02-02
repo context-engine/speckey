@@ -95,7 +95,7 @@ export class ParsePipeline {
                     path: "",
                     message: err.message,
                     code: err.code,
-                    userMessage: err.message, // TODO: add proper userMessage to integration validation errors
+                    userMessage: [err.message], // TODO: add proper userMessage to integration validation errors
                 });
             }
         }
@@ -148,7 +148,7 @@ export class ParsePipeline {
                         path: file.path,
                         message: diagramResult.parseError,
                         code: "PARSE_FAILURE",
-                        userMessage: diagramResult.parseError, // TODO: add proper userMessage to extract errors
+                        userMessage: [diagramResult.parseError], // TODO: add proper userMessage to extract errors
                     });
                 }
 
@@ -188,7 +188,7 @@ export class ParsePipeline {
                         path: file.path,
                         message: err.message,
                         code: err.code,
-                        userMessage: err.message, // TODO: add proper userMessage to build errors
+                        userMessage: [err.message], // TODO: add proper userMessage to build errors
                     });
                 }
 
@@ -200,7 +200,7 @@ export class ParsePipeline {
                     path: file.path,
                     message: msg,
                     code: "PARSE_FAILURE",
-                    userMessage: msg, // TODO: add proper userMessage to extract catch errors
+                    userMessage: [msg], // TODO: add proper userMessage to extract catch errors
                 });
             }
         }
@@ -223,7 +223,7 @@ export class ParsePipeline {
                 path: "",
                 message: err.message,
                 code: err.code,
-                userMessage: err.message, // TODO: add proper userMessage to write errors
+                userMessage: [err.message], // TODO: add proper userMessage to write errors
             });
         }
 
@@ -317,7 +317,7 @@ export class ParsePipeline {
                         path: file.path,
                         message: err.message,
                         code: `LINE_${err.line}`,
-                        userMessage: err.message, // TODO: add proper userMessage to parse errors
+                        userMessage: [err.message], // TODO: add proper userMessage to parse errors
                     });
                 }
                 // Skip files with actual errors

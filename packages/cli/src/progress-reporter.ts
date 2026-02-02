@@ -153,6 +153,7 @@ export class ProgressReporter {
         if (this.mode === "quiet") {
             return `[${error.phase}] ${error.path}: ${error.message}`;
         }
-        return `[${error.phase}] ${error.path}: ${error.userMessage}\n  ${error.message}`;
+        const userLines = error.userMessage.join("\n  ");
+        return `[${error.phase}] ${error.path}: ${userLines}\n  ${error.message}`;
     }
 }
