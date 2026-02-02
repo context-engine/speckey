@@ -6,7 +6,6 @@
 	"types": "./src/index.ts",
 	"dependencies": {
 		"@speckey/core": "workspace:*",
-		"@speckey/shared": "workspace:*",
 		"mermaid-ast": "^0.8.2",
 		"remark-gfm": "^4.0.1",
 		"remark-parse": "^11.0.0",
