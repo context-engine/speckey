@@ -10,7 +10,7 @@
     import "@xyflow/svelte/dist/style.css";
 
     import ClassNode from "./ClassNode.svelte";
-    import type { ClassNodeData } from "../transformers/class-diagram.ts";
+    import type { ClassNodeData } from "../../transformers/class-diagram.ts";
 
     interface Props {
         nodes: Node<ClassNodeData>[];

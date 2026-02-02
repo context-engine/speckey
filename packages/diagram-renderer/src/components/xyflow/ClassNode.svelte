@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ClassNodeData } from "../transformers/class-diagram.ts";
+	import type { ClassNodeData } from "../../transformers/class-diagram.ts";
 	import { Handle, Position } from "@xyflow/svelte";
 
 	interface Props {

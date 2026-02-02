@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/svelte";
 import { parseClassDiagram } from "mermaid-ast";
-import { transformClassDiagram } from "../transformers/class-diagram.ts";
+import { transformClassDiagram } from "../../transformers/class-diagram.ts";
 import DiagramViewer from "./DiagramViewer.svelte";
 
 // Sample class diagram
@@ -60,6 +60,7 @@ type Story = StoryObj<typeof meta>;
 
 // Animal Inheritance story with async loader
 export const AnimalInheritance: Story = {
+    args: { nodes: [], edges: [] },
     loaders: [
         async () => {
             const ast = parseClassDiagram(sampleDiagram);
@@ -78,6 +79,7 @@ export const AnimalInheritance: Story = {
 
 // E-commerce Model story with async loader
 export const EcommerceModel: Story = {
+    args: { nodes: [], edges: [] },
     loaders: [
         async () => {
             const ast = parseClassDiagram(ecommerceDiagram);
