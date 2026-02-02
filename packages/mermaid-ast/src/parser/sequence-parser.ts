@@ -210,6 +210,16 @@ function processStatements(statements: unknown[], ast: SequenceAST): void {
   function processStatement(stmt: unknown): void {
     if (!stmt || typeof stmt !== 'object') return;
 
+    // The JISON parser nests block body statements as arrays within the
+    // top-level statement list.  Recurse into them so that messages inside
+    // loop / alt / opt / etc. blocks are pushed onto the correct stack frame.
+    if (Array.isArray(stmt)) {
+      for (const inner of stmt) {
+        processStatement(inner);
+      }
+      return;
+    }
+
     const s = stmt as Record<string, unknown>;
     const type = s.type as string;
 
