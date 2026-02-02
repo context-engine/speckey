@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/svelte";
-import { parseSequence } from "mermaid-ast";
+import { parseSequence } from "@speckey/mermaid-ast";
 import { transformSequenceDiagram } from "../../transformers/sequence-diagram.ts";
 import SequenceViewer from "./SequenceViewer.svelte";
 

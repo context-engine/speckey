@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/svelte";
-import { parseClassDiagram } from "mermaid-ast";
+import { parseClassDiagram } from "@speckey/mermaid-ast";
 import { transformClassDiagram } from "../../transformers/class-diagram.ts";
 import DiagramViewer from "./DiagramViewer.svelte";
 

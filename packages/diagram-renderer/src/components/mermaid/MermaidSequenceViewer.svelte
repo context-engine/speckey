@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import type { SequenceAST } from "mermaid-ast";
+    import type { SequenceAST } from "@speckey/mermaid-ast";
     import { extractLayers, type Layer } from "../../lib/extract-layers.ts";
     import { tagSvgWithLayers } from "../../lib/tag-svg-layers.ts";
     import LayerPanel from "./LayerPanel.svelte";

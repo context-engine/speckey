@@ -30,4 +30,4 @@ export { tagSvgWithLayers } from "./lib/tag-svg-layers.ts";
 export type { TagResult } from "./lib/tag-svg-layers.ts";
 
 // Re-export mermaid-ast for convenience
-export { parseClassDiagram, parseSequence } from "mermaid-ast";
+export { parseClassDiagram, parseSequence } from "@speckey/mermaid-ast";

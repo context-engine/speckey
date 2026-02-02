@@ -4,7 +4,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/svelte";
-import type { SequenceAST, SequenceArrowType, NotePlacement } from "mermaid-ast";
+import type { SequenceAST, SequenceArrowType, NotePlacement } from "@speckey/mermaid-ast";
 
 // Actor colors assigned in order
 const ACTOR_COLORS = [

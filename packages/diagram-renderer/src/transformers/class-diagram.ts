@@ -4,7 +4,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/svelte";
-import type { ClassDiagramAST } from "mermaid-ast";
+import type { ClassDiagramAST } from "@speckey/mermaid-ast";
 import ELK, { type ElkNode, type ElkExtendedEdge } from "elkjs/lib/elk.bundled.js";
 
 export interface ClassNodeData extends Record<string, unknown> {

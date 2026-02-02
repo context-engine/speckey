@@ -4,7 +4,7 @@
  * with references to which message indices it contains.
  */
 
-import type { SequenceAST, SequenceStatement } from "mermaid-ast";
+import type { SequenceAST, SequenceStatement } from "@speckey/mermaid-ast";
 
 export interface Layer {
     id: string;
