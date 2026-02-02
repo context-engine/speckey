@@ -19,6 +19,7 @@
       "dependencies": {
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
+        "@speckey/errors": "workspace:*",
       },
     },
     "packages/core": {
@@ -62,9 +63,16 @@
         "svelte": "^5.0.0",
       },
     },
+    "packages/errors": {
+      "name": "@speckey/errors",
+      "version": "0.1.0",
+    },
     "packages/io": {
       "name": "@speckey/io",
       "version": "0.1.0",
+      "dependencies": {
+        "@speckey/errors": "workspace:*",
+      },
     },
     "packages/parser": {
       "name": "@speckey/parser",
@@ -347,6 +355,8 @@
     "@speckey/database": ["@speckey/database@workspace:packages/database"],
 
     "@speckey/diagram-renderer": ["@speckey/diagram-renderer@workspace:packages/diagram-renderer"],
+
+    "@speckey/errors": ["@speckey/errors@workspace:packages/errors"],
 
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
 

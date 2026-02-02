@@ -7,17 +7,18 @@ import {
 	type FileContents,
 	SkipReason,
 } from "./types";
+import { DiscoveryErrors } from "@speckey/errors";
 
-function toUserMessage(code: string, path: string): string {
+function toUserMessage(code: string): string {
 	switch (code) {
 		case "ENOENT":
-			return `Path does not exist: ${path}`;
+			return DiscoveryErrors.PATH_NOT_FOUND;
 		case "EACCES":
-			return `Permission denied: ${path}`;
+			return DiscoveryErrors.PERMISSION_DENIED;
 		case "INVALID_ENCODING":
-			return `Invalid UTF-8 encoding: ${path}`;
+			return DiscoveryErrors.INVALID_ENCODING;
 		default:
-			return `Unexpected error accessing: ${path}`;
+			return DiscoveryErrors.UNEXPECTED_ERROR;
 	}
 }
 
@@ -60,7 +61,7 @@ export class FileDiscovery {
 				path: config.rootDir,
 				message,
 				code,
-				userMessage: toUserMessage(code, config.rootDir),
+				userMessage: toUserMessage(code),
 			});
 		}
 
@@ -144,7 +145,7 @@ export class FileDiscovery {
 					path: filePath,
 					message: "File does not exist",
 					code: "ENOENT",
-					userMessage: toUserMessage("ENOENT", filePath),
+					userMessage: toUserMessage("ENOENT"),
 				});
 				return;
 			}
@@ -160,7 +161,7 @@ export class FileDiscovery {
 				path: filePath,
 				message,
 				code,
-				userMessage: toUserMessage(code, filePath),
+				userMessage: toUserMessage(code),
 			});
 		}
 	}
@@ -189,7 +190,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "File does not exist",
 						code: "ENOENT",
-						userMessage: toUserMessage("ENOENT", filePath),
+						userMessage: toUserMessage("ENOENT"),
 					});
 					continue;
 				}
@@ -216,7 +217,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "Invalid UTF-8 encoding",
 						code: "INVALID_ENCODING",
-						userMessage: toUserMessage("INVALID_ENCODING", filePath),
+						userMessage: toUserMessage("INVALID_ENCODING"),
 					});
 					continue;
 				}
@@ -233,7 +234,7 @@ export class FileDiscovery {
 					path: filePath,
 					message,
 					code,
-					userMessage: toUserMessage(code, filePath),
+					userMessage: toUserMessage(code),
 				});
 			}
 		}

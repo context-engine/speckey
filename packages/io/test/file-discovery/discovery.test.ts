@@ -3,6 +3,7 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
+import { DiscoveryErrors } from "@speckey/errors";
 
 describe("FileDiscovery", () => {
 	const testDir = resolve("./test-temp-discovery");
@@ -94,7 +95,7 @@ describe("FileDiscovery", () => {
 			// Should have empty files, may have error
 			expect(result.files).toHaveLength(0);
 			expect(result.errors.length).toBeGreaterThanOrEqual(1);
-			expect(result.errors[0]?.userMessage).toBe(`Path does not exist: ${nonExistentPath}`);
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should recursively discover files in nested subdirectories", async () => {
@@ -345,7 +346,7 @@ describe("FileDiscovery", () => {
 
 			expect(result.files).toHaveLength(0);
 			expect(result.errors.length).toBeGreaterThanOrEqual(1);
-			expect(result.errors[0]?.userMessage).toBe("Path does not exist: /nonexistent/absolute/path");
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should report errors in result.errors", async () => {
@@ -485,7 +486,7 @@ describe("FileDiscovery", () => {
 			expect(result.contents).toHaveLength(0);
 			expect(result.errors).toHaveLength(1);
 			expect(result.errors[0]?.code).toBe("ENOENT");
-			expect(result.errors[0]?.userMessage).toBe("Path does not exist: /nonexistent/file.md");
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should preserve file path in result", async () => {

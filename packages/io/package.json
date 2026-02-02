@@ -4,5 +4,7 @@
 	"type": "module",
 	"main": "./src/file-discovery/index.ts",
 	"types": "./src/file-discovery/index.ts",
-	"dependencies": {}
+	"dependencies": {
+		"@speckey/errors": "workspace:*"
+	}
 }

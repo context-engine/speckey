@@ -3,6 +3,7 @@ import { ProgressReporter } from "../src/progress-reporter";
 import { Command } from "../src/types";
 import type { PipelineResult, PipelineStats, PipelineError } from "@speckey/core";
 import type { WriteResult } from "@speckey/database";
+import { DiscoveryErrors } from "@speckey/errors";
 
 describe("ProgressReporter", () => {
     let consoleLogs: string[];
@@ -336,7 +337,7 @@ describe("ProgressReporter", () => {
                 path: "/path/to/file.md",
                 message: "Permission denied",
                 code: "EACCES",
-                userMessage: "Permission denied: /path/to/file.md",
+                userMessage: DiscoveryErrors.PERMISSION_DENIED,
             };
 
             reporter.error(error);
@@ -353,7 +354,7 @@ describe("ProgressReporter", () => {
                 path: "/bad/path",
                 message: "ENOENT: no such file or directory",
                 code: "ENOENT",
-                userMessage: "Path does not exist: /bad/path",
+                userMessage: DiscoveryErrors.PATH_NOT_FOUND,
             };
 
             reporter.error(error);
@@ -361,7 +362,7 @@ describe("ProgressReporter", () => {
             const output = consoleErrors.join("\n");
             expect(output).toInclude("[discovery]");
             expect(output).toInclude("/bad/path");
-            expect(output).toInclude("Path does not exist: /bad/path");
+            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND);
             expect(output).toInclude("ENOENT: no such file or directory");
         });
 
@@ -372,13 +373,13 @@ describe("ProgressReporter", () => {
                 path: "/bad/path",
                 message: "ENOENT: no such file or directory",
                 code: "ENOENT",
-                userMessage: "Path does not exist: /bad/path",
+                userMessage: DiscoveryErrors.PATH_NOT_FOUND,
             };
 
             reporter.error(error);
 
             const output = consoleErrors.join("\n");
-            expect(output).toInclude("Path does not exist: /bad/path");
+            expect(output).toInclude(DiscoveryErrors.PATH_NOT_FOUND);
             expect(output).toInclude("ENOENT: no such file or directory");
         });
 
@@ -389,7 +390,7 @@ describe("ProgressReporter", () => {
                 path: "/bad/path",
                 message: "ENOENT: no such file or directory",
                 code: "ENOENT",
-                userMessage: "Path does not exist: /bad/path",
+                userMessage: DiscoveryErrors.PATH_NOT_FOUND,
             };
 
             reporter.error(error);
@@ -405,7 +406,7 @@ describe("ProgressReporter", () => {
                 path: "/path/to/file.md",
                 message: "Invalid syntax",
                 code: "PARSE_ERROR",
-                userMessage: "Unexpected error accessing: /path/to/file.md",
+                userMessage: DiscoveryErrors.UNEXPECTED_ERROR,
             };
 
             reporter.error(error);
@@ -415,7 +416,7 @@ describe("ProgressReporter", () => {
             const parsed = JSON.parse(jsonLine!);
             expect(parsed.type).toBe("error");
             expect(parsed.error.phase).toBe("parse");
-            expect(parsed.error.userMessage).toBe("Unexpected error accessing: /path/to/file.md");
+            expect(parsed.error.userMessage).toBe(DiscoveryErrors.UNEXPECTED_ERROR);
         });
     });
 });

@@ -6,6 +6,7 @@
     "types": "./src/index.ts",
     "dependencies": {
         "@speckey/core": "workspace:*",
-        "@speckey/database": "workspace:*"
+        "@speckey/database": "workspace:*",
+        "@speckey/errors": "workspace:*"
     }
 }
