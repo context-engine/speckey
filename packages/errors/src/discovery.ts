@@ -5,4 +5,5 @@ export const DiscoveryErrors = {
 	PERMISSION_DENIED: ["Permission denied"],
 	INVALID_ENCODING: ["Invalid UTF-8 encoding"],
 	UNEXPECTED_ERROR: ["Unexpected error accessing"],
+	EMPTY_DIRECTORY: ["No markdown files found"],
 } as const satisfies Record<string, UserErrorMessage>;

@@ -3,6 +3,7 @@ import { join } from "path";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig } from "../../packages/core/src";
 import { OrphanPolicy } from "../../packages/database/src";
+import { DiscoveryErrors } from "../../packages/errors/src";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/e2e");
 
@@ -224,6 +225,7 @@ describe("E2E-600: Error Propagation", () => {
 
         const discoveryErrors = result.errors.filter(e => e.phase === "discovery");
         expect(discoveryErrors.length).toBeGreaterThan(0);
+        expect(discoveryErrors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
     });
 
     it("should process remaining files when one path fails", async () => {
@@ -281,6 +283,9 @@ describe("E2E-800: Edge Cases", () => {
 
         expect(result.stats.filesDiscovered).toBe(0);
         expect(result.classSpecs).toHaveLength(0);
+        const discoveryErrors = result.errors.filter(e => e.phase === "discovery");
+        expect(discoveryErrors).toHaveLength(1);
+        expect(discoveryErrors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
     });
 
     it("should silently skip classes without annotations (no errors)", async () => {

@@ -48,7 +48,17 @@ export class FileDiscovery {
 			// 2. Filter and validate
 			await this.filterFiles(allMatchedFiles, config, result);
 
-			// 3. Limit check (Warning logic is expected at CLI level, but we can cap it or mark as error if strict)
+			// 3. Check for empty result
+			if (result.files.length === 0 && result.errors.length === 0) {
+				result.errors.push({
+					path: config.rootDir,
+					message: "No markdown files found",
+					code: "EMPTY_DIRECTORY",
+					userMessage: DiscoveryErrors.EMPTY_DIRECTORY,
+				});
+			}
+
+			// 4. Limit check (Warning logic is expected at CLI level, but we can cap it or mark as error if strict)
 			// According to specs, validateFileLimit is a private method.
 			this.validateFileLimit(result.files, config.maxFiles);
 		} catch (error: unknown) {

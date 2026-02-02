@@ -66,7 +66,7 @@ describe("FileDiscovery", () => {
 			expect(result.files.some((f) => f.endsWith("spec2.md"))).toBe(true);
 		});
 
-		it("should return empty files for empty directory", async () => {
+		it("should return empty files for empty directory with error", async () => {
 			const config = {
 				include: ["**/*.md"],
 				exclude: [],
@@ -78,6 +78,8 @@ describe("FileDiscovery", () => {
 			const result = await discovery.discover(config);
 
 			expect(result.files).toHaveLength(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
 		});
 
 		it("should handle non-existent directory", async () => {

@@ -3,6 +3,7 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
+import { DiscoveryErrors } from "@speckey/errors";
 
 describe("ParsePipeline", () => {
     const testDir = resolve("./test-temp-core");
@@ -153,7 +154,9 @@ flowchart LR
 
             expect(result.files).toHaveLength(0);
             expect(result.stats.filesDiscovered).toBe(0);
-            expect(result.errors).toHaveLength(0);
+            expect(result.errors).toHaveLength(1);
+            expect(result.errors[0]?.phase).toBe("discovery");
+            expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
         });
 
         it("should return empty for no matching files", async () => {
