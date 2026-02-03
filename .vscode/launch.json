@@ -1,0 +1,52 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Parse Command",
+            "type": "bun",
+            "request": "launch",
+            "program": "${workspaceFolder}/packages/cli/src/bin.ts",
+            "args": ["parse", "${input:parsePath}"],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false
+        },
+        {
+            "name": "Debug Current Test File",
+            "type": "bun",
+            "request": "launch",
+            "program": "${file}",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "runtimeArgs": ["test"]
+        },
+        {
+            "name": "Debug Discovery Tests",
+            "type": "bun",
+            "request": "launch",
+            "program": "${workspaceFolder}/packages/io/test/file-discovery/discovery.test.ts",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "runtimeArgs": ["test"]
+        },
+        {
+            "name": "Debug E2E Tests",
+            "type": "bun",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/e2e/pipeline.e2e.test.ts",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "runtimeArgs": ["test"]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "parsePath",
+            "type": "promptString",
+            "description": "Path to parse (file or directory)",
+            "default": "."
+        }
+    ]
+}
