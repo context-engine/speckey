@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "vscode": {
+            "command": "node",
+            "args": ["/Users/livelifelively/dev/mcp-server-vscode/out/mcp/standalone-server.js"]
+        }
+    }
+}
