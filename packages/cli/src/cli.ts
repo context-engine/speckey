@@ -32,7 +32,7 @@ export class CLI {
 
         if (options.help) {
             const program = createProgram();
-            program.outputHelp();
+            console.log(program.helpInformation());
             return ExitCode.SUCCESS;
         }
 
