@@ -15,6 +15,7 @@ export const DEFAULT_PARSE_OPTIONS: Omit<ParseOptions, "command"> = {
     json: false,
     serial: false,
     noConfig: false,
+    include: [],
     exclude: [],
     help: false,
     version: false,
@@ -54,6 +55,7 @@ export function parseArgs(args: string[]): ParseOptions {
         ...DEFAULT_PARSE_OPTIONS,
         command: Command.PARSE,
         paths: [],
+        include: [],
         exclude: [],
     };
 
@@ -107,6 +109,15 @@ export function parseArgs(args: string[]): ParseOptions {
                         throw new Error("--db-path requires a value");
                     }
                     options.dbPath = value;
+                    i++;
+                    break;
+                }
+                case "--include": {
+                    const value = args[i + 1];
+                    if (!value || value.startsWith("-")) {
+                        throw new Error("--include requires a value");
+                    }
+                    options.include.push(value);
                     i++;
                     break;
                 }

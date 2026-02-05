@@ -30,6 +30,7 @@ export interface ParseOptions {
     serial: boolean;
     workers?: number;
     noConfig: boolean;
+    include: string[];
     exclude: string[];
     help: boolean;
     version: boolean;

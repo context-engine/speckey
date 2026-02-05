@@ -225,7 +225,7 @@ describe("ConfigLoader", () => {
     });
 
     describe("mergeWithCLI", () => {
-        it("should merge CLI exclude with base config", () => {
+        it("should append CLI exclude to base config exclude", () => {
             const base = {
                 include: ["**/*.md"],
                 exclude: ["**/node_modules/**"],
@@ -233,11 +233,72 @@ describe("ConfigLoader", () => {
                 maxFileSizeMb: 10,
             };
 
-            const merged = ConfigLoader.mergeWithCLI(base, ["*.test.md", "README.md"]);
+            const merged = ConfigLoader.mergeWithCLI(base, ["*.test.md", "README.md"], []);
 
             expect(merged.exclude).toContain("**/node_modules/**");
             expect(merged.exclude).toContain("*.test.md");
             expect(merged.exclude).toContain("README.md");
+        });
+
+        it("should replace base include when CLI include is provided", () => {
+            const base = {
+                include: ["**/*.md"],
+                exclude: ["**/node_modules/**"],
+                maxFiles: 10000,
+                maxFileSizeMb: 10,
+            };
+
+            const merged = ConfigLoader.mergeWithCLI(base, [], ["phase-1/**/*.md"]);
+
+            expect(merged.include).toEqual(["phase-1/**/*.md"]);
+        });
+
+        it("should keep base include when CLI include is empty", () => {
+            const base = {
+                include: ["**/*.md"],
+                exclude: ["**/node_modules/**"],
+                maxFiles: 10000,
+                maxFileSizeMb: 10,
+            };
+
+            const merged = ConfigLoader.mergeWithCLI(base, [], []);
+
+            expect(merged.include).toEqual(["**/*.md"]);
+        });
+
+        it("should handle include replace and exclude append together", () => {
+            const base = {
+                include: ["**/*.md"],
+                exclude: ["**/node_modules/**"],
+                maxFiles: 10000,
+                maxFileSizeMb: 10,
+            };
+
+            const merged = ConfigLoader.mergeWithCLI(
+                base,
+                ["**/*test.md"],
+                ["phase-1/**/*.md"],
+            );
+
+            expect(merged.include).toEqual(["phase-1/**/*.md"]);
+            expect(merged.exclude).toEqual(["**/node_modules/**", "**/*test.md"]);
+        });
+
+        it("should replace with multiple CLI include patterns", () => {
+            const base = {
+                include: ["**/*.md"],
+                exclude: ["**/node_modules/**"],
+                maxFiles: 10000,
+                maxFileSizeMb: 10,
+            };
+
+            const merged = ConfigLoader.mergeWithCLI(
+                base,
+                [],
+                ["phase-1/**/*.md", "phase-2/**/*.md"],
+            );
+
+            expect(merged.include).toEqual(["phase-1/**/*.md", "phase-2/**/*.md"]);
         });
 
         it("should not modify base config", () => {
@@ -248,9 +309,10 @@ describe("ConfigLoader", () => {
                 maxFileSizeMb: 10,
             };
 
-            ConfigLoader.mergeWithCLI(base, ["*.test.md"]);
+            ConfigLoader.mergeWithCLI(base, ["*.test.md"], ["phase-1/**/*.md"]);
 
             expect(base.exclude).toEqual(["**/node_modules/**"]);
+            expect(base.include).toEqual(["**/*.md"]);
         });
     });
 });

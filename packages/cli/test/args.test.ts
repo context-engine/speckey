@@ -161,6 +161,20 @@ describe("parseArgs", () => {
             expect(result.exclude).toEqual(["*.test.md", "README.md"]);
         });
 
+        it("should parse --include with single pattern", () => {
+            const result = parseArgs(["parse", "--include", "phase-1/**/*.md"]);
+            expect(result.include).toEqual(["phase-1/**/*.md"]);
+        });
+
+        it("should parse multiple --include flags", () => {
+            const result = parseArgs([
+                "parse",
+                "--include", "phase-1/**/*.md",
+                "--include", "phase-2/**/*.md",
+            ]);
+            expect(result.include).toEqual(["phase-1/**/*.md", "phase-2/**/*.md"]);
+        });
+
         it("should parse --db-path with value", () => {
             const result = parseArgs(["sync", "--db-path", "./data.db"]);
             expect(result.dbPath).toBe("./data.db");
@@ -205,6 +219,10 @@ describe("parseArgs", () => {
             expect(() => parseArgs(["parse", "--exclude"])).toThrow("--exclude requires a value");
         });
 
+        it("should throw error for --include missing value", () => {
+            expect(() => parseArgs(["parse", "--include"])).toThrow("--include requires a value");
+        });
+
         it("should throw error for --workers above max (33)", () => {
             expect(() => parseArgs(["parse", "--workers", "33"])).toThrow("--workers must be a number between 1 and 32");
         });
@@ -242,6 +260,19 @@ describe("parseArgs", () => {
             expect(result.command).toBe(Command.SYNC);
             expect(result.dbPath).toBe("./data.db");
             expect(result.workers).toBe(2);
+        });
+
+        it("should handle include with exclude and paths", () => {
+            const result = parseArgs([
+                "parse",
+                "./specs",
+                "--include", "phase-1/**/*.md",
+                "--exclude", "**/*test.md",
+            ]);
+            expect(result.command).toBe(Command.PARSE);
+            expect(result.paths).toEqual(["./specs"]);
+            expect(result.include).toEqual(["phase-1/**/*.md"]);
+            expect(result.exclude).toEqual(["**/*test.md"]);
         });
     });
 

@@ -111,14 +111,18 @@ export class ConfigLoader {
     }
 
     /**
-     * Merge base config with CLI options (CLI wins).
+     * Merge base config with CLI options.
+     * - include: replace (CLI patterns replace base entirely when provided)
+     * - exclude: append (CLI patterns are added to base)
      */
     static mergeWithCLI(
         base: Omit<PipelineConfig, "paths">,
         cliExclude: string[],
+        cliInclude: string[] = [],
     ): Omit<PipelineConfig, "paths"> {
         return {
             ...base,
+            include: cliInclude.length > 0 ? [...cliInclude] : base.include,
             exclude: [...(base.exclude || []), ...(cliExclude || [])],
         };
     }

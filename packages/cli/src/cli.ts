@@ -22,6 +22,7 @@ Commands:
 Options:
   --config <path>     Use specific config file
   --db-path <path>    Database path (sync command only)
+  --include <glob>    Inclusion patterns (replaces defaults, can be repeated)
   --exclude <glob>    Additional exclusion patterns (can be repeated)
   --workers <n>       Worker count (1-32, default: auto)
   --verbose, -v       Show detailed output
@@ -111,7 +112,7 @@ export class CLI {
             baseConfig = await ConfigLoader.load(configPath);
         }
 
-        const merged = ConfigLoader.mergeWithCLI(baseConfig, options.exclude);
+        const merged = ConfigLoader.mergeWithCLI(baseConfig, options.exclude, options.include);
 
         // Single-file .md validation: if a single path with a file extension
         // is provided and it's not .md, give a clear error instead of a confusing
