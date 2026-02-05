@@ -7,6 +7,7 @@
     "dependencies": {
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
-        "@speckey/errors": "workspace:*"
+        "@speckey/errors": "workspace:*",
+        "commander": "^14.0.3"
     }
 }

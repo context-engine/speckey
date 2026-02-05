@@ -1,43 +1,10 @@
 import { extname } from "node:path";
 import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
 import type { WriteConfig } from "@speckey/database";
-import { parseArgs } from "./args";
+import { createProgram, parseArgs } from "./args";
 import { ConfigLoader, DEFAULT_CONFIG } from "./config-loader";
 import { ProgressReporter } from "./progress-reporter";
 import { Command, ExitCode, type OutputMode, type ParseOptions } from "./types";
-
-const VERSION = "0.1.0";
-
-const HELP_TEXT = `
-speckey - Parse and validate mermaid class diagrams from markdown
-
-Usage:
-  speckey <command> [paths...] [options]
-
-Commands:
-  parse       Parse markdown files (phases 1-3)
-  validate    Parse and validate references (phases 1-4)
-  sync        Parse, validate, and write to database (phases 1-5)
-
-Options:
-  --config <path>     Use specific config file
-  --db-path <path>    Database path (sync command only)
-  --include <glob>    Inclusion patterns (replaces defaults, can be repeated)
-  --exclude <glob>    Additional exclusion patterns (can be repeated)
-  --workers <n>       Worker count (1-32, default: auto)
-  --verbose, -v       Show detailed output
-  --quiet, -q         Show errors only
-  --json              Output as JSON lines
-  --serial            Process files sequentially
-  --no-config         Skip config file loading
-  --help, -h          Show this help
-  --version           Show version
-
-Examples:
-  speckey parse .
-  speckey validate ./docs ./specs
-  speckey sync ./specs --db-path ./speckey.db
-`.trim();
 
 /**
  * Main CLI class.
@@ -64,12 +31,14 @@ export class CLI {
         }
 
         if (options.help) {
-            console.log(HELP_TEXT);
+            const program = createProgram();
+            program.outputHelp();
             return ExitCode.SUCCESS;
         }
 
         if (options.version) {
-            console.log(VERSION);
+            const program = createProgram();
+            console.log(program.version());
             return ExitCode.SUCCESS;
         }
 

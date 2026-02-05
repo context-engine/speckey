@@ -20,6 +20,7 @@
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
         "@speckey/errors": "workspace:*",
+        "commander": "^14.0.3",
       },
     },
     "packages/core": {
@@ -65,6 +66,23 @@
         "svelte": "^5.0.0",
       },
     },
+    "packages/diagram-svg": {
+      "name": "@speckey/diagram-svg",
+      "version": "0.2.0",
+      "dependencies": {
+        "@svgdotjs/svg.js": "^3.2.5",
+        "elkjs": "^0.9.3",
+        "svgdom": "^0.1.23",
+        "web-worker": "^1.5.0",
+      },
+      "devDependencies": {
+        "@speckey/mermaid-ast": "workspace:*",
+        "typescript": "^5.0.0",
+      },
+      "peerDependencies": {
+        "@speckey/mermaid-ast": "workspace:*",
+      },
+    },
     "packages/errors": {
       "name": "@speckey/errors",
       "version": "0.1.0",
@@ -86,23 +104,6 @@
         "@types/node": "^20.0.0",
         "happy-dom": "^20.3.1",
         "typescript": "^5.7.0",
-      },
-    },
-    "packages/mermaid-svg": {
-      "name": "@speckey/mermaid-svg",
-      "version": "0.1.0",
-      "dependencies": {
-        "@svgdotjs/svg.js": "^3.2.5",
-        "elkjs": "^0.9.3",
-        "svgdom": "^0.1.23",
-        "web-worker": "^1.5.0",
-      },
-      "devDependencies": {
-        "@speckey/mermaid-ast": "workspace:*",
-        "typescript": "^5.0.0",
-      },
-      "peerDependencies": {
-        "@speckey/mermaid-ast": "workspace:*",
       },
     },
     "packages/parser": {
@@ -395,13 +396,13 @@
 
     "@speckey/diagram-renderer": ["@speckey/diagram-renderer@workspace:packages/diagram-renderer"],
 
+    "@speckey/diagram-svg": ["@speckey/diagram-svg@workspace:packages/diagram-svg"],
+
     "@speckey/errors": ["@speckey/errors@workspace:packages/errors"],
 
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
 
     "@speckey/mermaid-ast": ["@speckey/mermaid-ast@workspace:packages/mermaid-ast"],
-
-    "@speckey/mermaid-svg": ["@speckey/mermaid-svg@workspace:packages/mermaid-svg"],
 
     "@speckey/parser": ["@speckey/parser@workspace:packages/parser"],
 
@@ -653,7 +654,7 @@
 
     "color-name": ["color-name@1.1.4", "", {}, "sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA=="],
 
-    "commander": ["commander@14.0.2", "", {}, "sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ=="],
+    "commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "concat-map": ["concat-map@0.0.1", "", {}, "sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg=="],
 
@@ -1425,7 +1426,7 @@
 
     "@speckey/diagram-renderer/@types/bun": ["@types/bun@1.3.8", "", { "dependencies": { "bun-types": "1.3.8" } }, "sha512-3LvWJ2q5GerAXYxO2mffLTqOzEu5qnhEAlh48Vnu8WQfnmSwbgagjGZV6BoHKJztENYEDn6QmVd949W4uESRJA=="],
 
-    "@speckey/mermaid-svg/elkjs": ["elkjs@0.9.3", "", {}, "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ=="],
+    "@speckey/diagram-svg/elkjs": ["elkjs@0.9.3", "", {}, "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ=="],
 
     "@storybook/addon-actions/uuid": ["uuid@9.0.1", "", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA=="],
 
@@ -1436,6 +1437,8 @@
     "@storybook/svelte-vite/@sveltejs/vite-plugin-svelte": ["@sveltejs/vite-plugin-svelte@5.1.1", "", { "dependencies": { "@sveltejs/vite-plugin-svelte-inspector": "^4.0.1", "debug": "^4.4.1", "deepmerge": "^4.3.1", "kleur": "^4.1.5", "magic-string": "^0.30.17", "vitefu": "^1.0.6" }, "peerDependencies": { "svelte": "^5.0.0", "vite": "^6.0.0" } }, "sha512-Y1Cs7hhTc+a5E9Va/xwKlAJoariQyHY+5zBgCZg4PFWNYQ1nMN9sjK1zhw1gK69DuqVP++sht/1GZg1aRwmAXQ=="],
 
     "@storybook/svelte-vite/vite": ["vite@6.4.1", "", { "dependencies": { "esbuild": "^0.25.0", "fdir": "^6.4.4", "picomatch": "^4.0.2", "postcss": "^8.5.3", "rollup": "^4.34.9", "tinyglobby": "^0.2.13" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^18.0.0 || ^20.0.0 || >=22.0.0", "jiti": ">=1.21.0", "less": "*", "lightningcss": "^1.21.0", "sass": "*", "sass-embedded": "*", "stylus": "*", "sugarss": "*", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-+Oxm7q9hDoLMyJOYfUYBuHQo+dkAloi33apOPP56pzj+vsdJDzr+j1NISE5pyaAuKL4A3UD34qd0lx5+kfKp2g=="],
+
+    "@stryker-mutator/core/commander": ["commander@14.0.2", "", {}, "sha512-TywoWNNRbhoD0BXs1P3ZEScW8W5iKrnbithIl0YH+uCmBd0QpPOA8yc82DS3BIE5Ma6FnBVUsJ7wVUDz4dvOWQ=="],
 
     "@types/ws/@types/node": ["@types/node@25.0.10", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-zWW5KPngR/yvakJgGOmZ5vTBemDoSqF3AcV/LrO5u5wTWyEAVVh+IT39G4gtyAkh3CtTZs8aX/yRM82OfzHJRg=="],
 

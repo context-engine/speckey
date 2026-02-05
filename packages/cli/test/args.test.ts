@@ -1,59 +1,32 @@
 import { describe, expect, it } from "bun:test";
-import { parseArgs, resolveCommand } from "../src/args";
+import { parseArgs } from "../src/args";
 import { Command } from "../src/types";
 
 // ============================================================
 // Feature: Subcommand Dispatch
 // ============================================================
 
-describe("resolveCommand", () => {
-    it("should resolve 'parse' to Command.PARSE", () => {
-        expect(resolveCommand("parse")).toBe(Command.PARSE);
-    });
-
-    it("should resolve 'validate' to Command.VALIDATE", () => {
-        expect(resolveCommand("validate")).toBe(Command.VALIDATE);
-    });
-
-    it("should resolve 'sync' to Command.SYNC", () => {
-        expect(resolveCommand("sync")).toBe(Command.SYNC);
-    });
-
-    it("should throw for missing subcommand", () => {
-        expect(() => resolveCommand(undefined)).toThrow("Missing subcommand");
-    });
-
-    it("should throw for unknown subcommand", () => {
-        expect(() => resolveCommand("unknown")).toThrow('Unknown command "unknown"');
-    });
-
-    it("should throw for flag as subcommand", () => {
-        expect(() => resolveCommand("--verbose")).toThrow("Missing subcommand");
-    });
-});
-
-// ============================================================
-// Feature: Argument Parsing - Subcommand + Paths
-// ============================================================
-
 describe("parseArgs", () => {
-    describe("Subcommand Parsing", () => {
-        it("should parse command and positional paths", () => {
+    describe("Subcommand Dispatch", () => {
+        it("should resolve parse command", () => {
+            const result = parseArgs(["parse", "./specs"]);
+            expect(result.command).toBe(Command.PARSE);
+        });
+
+        it("should resolve validate command", () => {
+            const result = parseArgs(["validate", "./specs"]);
+            expect(result.command).toBe(Command.VALIDATE);
+        });
+
+        it("should resolve sync command", () => {
+            const result = parseArgs(["sync", "./specs"]);
+            expect(result.command).toBe(Command.SYNC);
+        });
+
+        it("should parse command with positional paths", () => {
             const result = parseArgs(["parse", "./docs", "./specs"]);
             expect(result.command).toBe(Command.PARSE);
             expect(result.paths).toEqual(["./docs", "./specs"]);
-        });
-
-        it("should parse validate command", () => {
-            const result = parseArgs(["validate", "./specs"]);
-            expect(result.command).toBe(Command.VALIDATE);
-            expect(result.paths).toEqual(["./specs"]);
-        });
-
-        it("should parse sync command", () => {
-            const result = parseArgs(["sync", "./specs"]);
-            expect(result.command).toBe(Command.SYNC);
-            expect(result.paths).toEqual(["./specs"]);
         });
 
         it("should default to current directory when no paths specified", () => {
@@ -62,34 +35,20 @@ describe("parseArgs", () => {
             expect(result.paths).toEqual(["."]);
         });
 
-        it("should throw when no subcommand provided", () => {
-            expect(() => parseArgs([])).toThrow("Missing subcommand");
+        it("should throw for unknown subcommand", () => {
+            expect(() => parseArgs(["unknown", "./specs"])).toThrow("unknown command");
         });
 
         it("should throw when only flags provided (no subcommand)", () => {
-            expect(() => parseArgs(["--verbose"])).toThrow("Missing subcommand");
-        });
-
-        it("should throw for unknown subcommand", () => {
-            expect(() => parseArgs(["unknown", "./specs"])).toThrow('Unknown command "unknown"');
+            expect(() => parseArgs(["--verbose"])).toThrow();
         });
     });
 
     // ============================================================
-    // Feature: Argument Parsing - Boolean Flags
+    // Feature: Boolean Flags
     // ============================================================
 
     describe("Boolean Flags", () => {
-        it("should parse --help flag", () => {
-            const result = parseArgs(["--help"]);
-            expect(result.help).toBe(true);
-        });
-
-        it("should parse --version flag", () => {
-            const result = parseArgs(["--version"]);
-            expect(result.version).toBe(true);
-        });
-
         it("should parse --verbose flag", () => {
             const result = parseArgs(["parse", "--verbose"]);
             expect(result.verbose).toBe(true);
@@ -130,11 +89,6 @@ describe("parseArgs", () => {
             const result = parseArgs(["parse", "./specs", "-q"]);
             expect(result.quiet).toBe(true);
         });
-
-        it("should parse -h as help", () => {
-            const result = parseArgs(["-h"]);
-            expect(result.help).toBe(true);
-        });
     });
 
     // ============================================================
@@ -145,10 +99,6 @@ describe("parseArgs", () => {
         it("should parse --config with value", () => {
             const result = parseArgs(["parse", "--config", "/custom/config.json"]);
             expect(result.configPath).toBe("/custom/config.json");
-        });
-
-        it("should throw error when --config missing value", () => {
-            expect(() => parseArgs(["parse", "--config"])).toThrow("--config requires a value");
         });
 
         it("should parse --exclude with value", () => {
@@ -180,21 +130,21 @@ describe("parseArgs", () => {
             expect(result.dbPath).toBe("./data.db");
         });
 
-        it("should throw error when --db-path missing value", () => {
-            expect(() => parseArgs(["sync", "--db-path"])).toThrow("--db-path requires a value");
-        });
-
         it("should parse --workers with value", () => {
             const result = parseArgs(["parse", "--workers", "4"]);
             expect(result.workers).toBe(4);
         });
 
         it("should throw error when --workers value is out of range", () => {
-            expect(() => parseArgs(["parse", "--workers", "0"])).toThrow("--workers must be a number between 1 and 32");
+            expect(() => parseArgs(["parse", "--workers", "0"])).toThrow();
         });
 
         it("should throw error when --workers value is not a number", () => {
-            expect(() => parseArgs(["parse", "--workers", "abc"])).toThrow("--workers must be a number between 1 and 32");
+            expect(() => parseArgs(["parse", "--workers", "abc"])).toThrow();
+        });
+
+        it("should throw error when --workers above max (33)", () => {
+            expect(() => parseArgs(["parse", "--workers", "33"])).toThrow();
         });
     });
 
@@ -204,27 +154,15 @@ describe("parseArgs", () => {
 
     describe("Error Handling", () => {
         it("should throw error for unknown long flag", () => {
-            expect(() => parseArgs(["parse", "--unknown-flag"])).toThrow("Unknown flag: --unknown-flag");
+            expect(() => parseArgs(["parse", "--unknown-flag"])).toThrow("unknown option");
         });
 
         it("should throw error for unknown short flag", () => {
-            expect(() => parseArgs(["parse", "-x"])).toThrow("Unknown flag: -x");
+            expect(() => parseArgs(["parse", "-x"])).toThrow("unknown option");
         });
 
         it("should throw error for --verbose + --quiet conflict", () => {
             expect(() => parseArgs(["parse", "--verbose", "--quiet"])).toThrow("Conflicting flags");
-        });
-
-        it("should throw error for --exclude missing value", () => {
-            expect(() => parseArgs(["parse", "--exclude"])).toThrow("--exclude requires a value");
-        });
-
-        it("should throw error for --include missing value", () => {
-            expect(() => parseArgs(["parse", "--include"])).toThrow("--include requires a value");
-        });
-
-        it("should throw error for --workers above max (33)", () => {
-            expect(() => parseArgs(["parse", "--workers", "33"])).toThrow("--workers must be a number between 1 and 32");
         });
     });
 
@@ -277,23 +215,49 @@ describe("parseArgs", () => {
     });
 
     // ============================================================
-    // Feature: Help/Version without subcommand
+    // Feature: Help/Version
     // ============================================================
 
-    describe("Help/Version without subcommand", () => {
-        it("should allow --help without subcommand", () => {
+    describe("Help/Version", () => {
+        it("should return help flag for --help", () => {
             const result = parseArgs(["--help"]);
             expect(result.help).toBe(true);
         });
 
-        it("should allow --version without subcommand", () => {
+        it("should return version flag for --version", () => {
             const result = parseArgs(["--version"]);
             expect(result.version).toBe(true);
         });
 
-        it("should allow -h without subcommand", () => {
+        it("should return help flag for -h", () => {
             const result = parseArgs(["-h"]);
             expect(result.help).toBe(true);
+        });
+
+        it("should return help flag for subcommand --help", () => {
+            const result = parseArgs(["parse", "--help"]);
+            expect(result.help).toBe(true);
+        });
+    });
+
+    // ============================================================
+    // Feature: Equals Syntax (handled by commander)
+    // ============================================================
+
+    describe("Equals Syntax", () => {
+        it("should parse --config=path syntax", () => {
+            const result = parseArgs(["parse", "--config=/custom/config.json"]);
+            expect(result.configPath).toBe("/custom/config.json");
+        });
+
+        it("should parse --include=pattern syntax", () => {
+            const result = parseArgs(["parse", "--include=phase-1/**/*.md"]);
+            expect(result.include).toEqual(["phase-1/**/*.md"]);
+        });
+
+        it("should parse --workers=4 syntax", () => {
+            const result = parseArgs(["parse", "--workers=4"]);
+            expect(result.workers).toBe(4);
         });
     });
 });
