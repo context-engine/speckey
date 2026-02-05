@@ -2,8 +2,8 @@ import { describe, expect, it, beforeAll, afterAll, spyOn, beforeEach, afterEach
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { CLI } from "../../packages/cli/src/cli";
-import { ExitCode } from "../../packages/cli/src/types";
+import { CLI } from "../../apps/cli/src/cli";
+import { ExitCode } from "../../apps/cli/src/types";
 
 const FIXTURES_DIR = resolve(import.meta.dir, "../fixtures");
 

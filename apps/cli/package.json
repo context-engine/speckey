@@ -2,8 +2,9 @@
     "name": "@speckey/cli",
     "version": "0.1.0",
     "type": "module",
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
+    "bin": {
+        "speckey": "./src/bin.ts"
+    },
     "dependencies": {
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",

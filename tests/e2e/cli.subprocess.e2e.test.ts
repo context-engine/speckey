@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const BIN_PATH = resolve(import.meta.dir, "../../packages/cli/src/bin.ts");
+const BIN_PATH = resolve(import.meta.dir, "../../apps/cli/src/bin.ts");
 const FIXTURES = resolve(import.meta.dir, "../fixtures/e2e");
 
 function fixture(...segments: string[]): string {

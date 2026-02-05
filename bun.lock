@@ -13,9 +13,12 @@
         "typescript": "^5.9.3",
       },
     },
-    "packages/cli": {
+    "apps/cli": {
       "name": "@speckey/cli",
       "version": "0.1.0",
+      "bin": {
+        "speckey": "./src/bin.ts",
+      },
       "dependencies": {
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
@@ -388,7 +391,7 @@
 
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
 
-    "@speckey/cli": ["@speckey/cli@workspace:packages/cli"],
+    "@speckey/cli": ["@speckey/cli@workspace:apps/cli"],
 
     "@speckey/core": ["@speckey/core@workspace:packages/core"],
 

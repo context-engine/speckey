@@ -11,6 +11,7 @@
 	},
 	"private": true,
 	"scripts": {
+		"speckey": "bun apps/cli/src/bin.ts",
 		"dev": "bun run --filter '*' dev",
 		"build": "bun run --filter '*' build",
 		"test": "bun test",
@@ -23,6 +24,7 @@
 	},
 	"type": "module",
 	"workspaces": [
-		"packages/*"
+		"packages/*",
+		"apps/*"
 	]
 }
