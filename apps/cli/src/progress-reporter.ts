@@ -68,6 +68,13 @@ export class ProgressReporter {
                 console.log(this.formatSyncResult(result));
                 break;
         }
+
+        if (this.mode === "verbose") {
+            const details = this.formatVerboseDetails(result);
+            if (details) {
+                console.log(details);
+            }
+        }
     }
 
     private completeJson(command: Command, result: PipelineResult): void {
@@ -107,6 +114,13 @@ export class ProgressReporter {
 
         const resolved = report.resolved.length;
         const unresolved = report.unresolved.length;
+
+        // Count external references from classSpecs
+        let externalCount = 0;
+        for (const cs of result.classSpecs ?? []) {
+            externalCount += cs.externalDeps?.length ?? 0;
+        }
+
         const lines = [`Validation complete: ${result.classSpecs?.length ?? 0} entities`];
         lines.push("");
         lines.push("References:");
@@ -114,10 +128,29 @@ export class ProgressReporter {
 
         if (unresolved > 0) {
             lines.push(`  ✗ ${unresolved} unresolved`);
+        }
+
+        if (externalCount > 0) {
+            lines.push(`  ◆ ${externalCount} external`);
+        }
+
+        if (unresolved > 0) {
             lines.push("");
             lines.push("Unresolved references:");
+
+            // Group by file
+            const grouped = new Map<string, typeof report.unresolved>();
             for (const entry of report.unresolved) {
-                lines.push(`  ${entry.specFile}:${entry.specLine}  ${entry.entityFqn} → ${entry.targetFqn} (not found)`);
+                const entries = grouped.get(entry.specFile) ?? [];
+                entries.push(entry);
+                grouped.set(entry.specFile, entries);
+            }
+
+            for (const [file, entries] of grouped) {
+                lines.push(`  ${file}:`);
+                for (const entry of entries) {
+                    lines.push(`    :${entry.specLine}  ${entry.entityFqn} → ${entry.targetFqn}`);
+                }
             }
         }
 
@@ -144,6 +177,43 @@ export class ProgressReporter {
             lines.push(`  Inserted: ${result.writeResult.inserted}`);
             lines.push(`  Updated: ${result.writeResult.updated}`);
             lines.push(`  Orphaned: ${result.writeResult.orphaned} (policy: keep)`);
+        }
+
+        return lines.join("\n");
+    }
+
+    private formatVerboseDetails(result: PipelineResult): string | undefined {
+        const classSpecs = result.classSpecs ?? [];
+        if (classSpecs.length === 0) {
+            return undefined;
+        }
+
+        const lines: string[] = [];
+
+        // Per-file entity counts
+        const byFile = new Map<string, number>();
+        for (const cs of classSpecs) {
+            byFile.set(cs.specFile, (byFile.get(cs.specFile) ?? 0) + 1);
+        }
+        lines.push("");
+        lines.push("Per-file details:");
+        for (const [file, count] of [...byFile.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+            lines.push(`  ${file} — ${count} entities`);
+        }
+
+        // Package breakdown
+        const byPackage = new Map<string, number>();
+        for (const cs of classSpecs) {
+            if (cs.package) {
+                byPackage.set(cs.package, (byPackage.get(cs.package) ?? 0) + 1);
+            }
+        }
+        if (byPackage.size > 0) {
+            lines.push("");
+            lines.push("Packages:");
+            for (const [pkg, count] of [...byPackage.entries()].sort((a, b) => b[1] - a[1])) {
+                lines.push(`  ${pkg} — ${count} entities`);
+            }
         }
 
         return lines.join("\n");

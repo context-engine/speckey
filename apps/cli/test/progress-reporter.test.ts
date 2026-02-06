@@ -165,8 +165,11 @@ describe("ProgressReporter", () => {
 
             const output = consoleLogs.join("\n");
             expect(output).toInclude("2 unresolved");
-            expect(output).toInclude("session.md:7");
+            expect(output).toInclude("session.md:");
+            expect(output).toInclude(":7");
             expect(output).toInclude("CustomTransport");
+            expect(output).toInclude("config.md:");
+            expect(output).toInclude(":12");
         });
 
         it("should output JSON for validate in json mode", () => {
