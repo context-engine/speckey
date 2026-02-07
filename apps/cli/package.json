@@ -12,6 +12,7 @@
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
         "@speckey/constants": "workspace:*",
+        "@speckey/logger": "workspace:*",
         "commander": "^14.0.3"
     }
 }

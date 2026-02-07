@@ -32,7 +32,7 @@ export function createLogger(
 ): Logger<AppLogObj> {
 	return new Logger<AppLogObj>({
 		name,
-		type: mode === "silent" || mode === "error" ? "hidden" : "pretty",
+		type: mode === "silent" ? "hidden" : "pretty",
 		minLevel: MIN_LEVELS[mode],
 		hideLogPositionForProduction: true,
 	});

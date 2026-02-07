@@ -26,9 +26,9 @@ bun run speckey sync ./specs --db-path ./data.db  # Parse, validate, and write t
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--verbose` | `-v` | Show detailed output (per-file details, package breakdown) |
-| `--quiet` | `-q` | Show errors only |
-| `--json` | | Output as JSON lines |
+| `--verbose` | `-v` | Debug-level logging (all pipeline details) |
+| `--quiet` | `-q` | Error-level logging only |
+| `--json` | | Structured JSON log output |
 | `--config <path>` | | Use specific config file |
 | `--no-config` | | Skip config file loading |
 | `--include <pattern>` | | Inclusion glob patterns (replaces defaults, repeatable) |
@@ -38,6 +38,17 @@ bun run speckey sync ./specs --db-path ./data.db  # Parse, validate, and write t
 | `--version` | | Display version |
 
 `--verbose` and `--quiet` are mutually exclusive.
+
+### Output Modes
+
+Output flags map to `@speckey/logger` log modes:
+
+| CLI Flag | OutputMode | LogMode | Logger Type | Behavior |
+|----------|-----------|---------|-------------|----------|
+| _(default)_ | `normal` | `info` | pretty | Info-level and above |
+| `--verbose` | `verbose` | `debug` | pretty | All log levels |
+| `--quiet` | `quiet` | `error` | pretty | Errors only |
+| `--json` | `json` | `debug` | json | All log levels, structured JSON |
 
 ## Config Resolution
 
@@ -57,12 +68,13 @@ Use `--no-config` to skip config file loading entirely. Use `--config <path>` to
 
 ```
 bin.ts          Entry point — instantiates CLI, passes argv, exits with code
-  └── cli.ts    Orchestrator — parseArgs → config → pipeline → display
+  └── cli.ts    Orchestrator — parseArgs → logger → config → pipeline → exit code
         ├── args.ts           Argument parsing (commander.js)
         ├── config-loader.ts  Config file discovery and merging
-        ├── progress-reporter.ts  Output formatting (human/json/quiet/verbose)
         └── types.ts          Command enum, ExitCode enum, ParseOptions, OutputMode
 ```
+
+The CLI creates a `@speckey/logger` instance based on output flags and passes it to the pipeline. All output (progress, results, errors) is streamed through the logger by the pipeline and its sub-components. The CLI only determines the exit code from the pipeline result.
 
 ### Exit Codes
 
@@ -79,6 +91,7 @@ bin.ts          Entry point — instantiates CLI, passes argv, exits with code
 | `@speckey/core` | `ParsePipeline` — the 5-phase processing pipeline |
 | `@speckey/database` | `WriteConfig` type for sync command |
 | `@speckey/constants` | Centralized error messages and CLI descriptions |
+| `@speckey/logger` | Structured logging (tslog wrapper) |
 | `commander` | Argument parsing |
 
 ## Tests
@@ -92,4 +105,3 @@ Test files mirror source files 1:1:
 - `args.test.ts` — subcommand dispatch, flags, value options, error handling, combined arguments
 - `cli.test.ts` — end-to-end CLI orchestration
 - `config-loader.test.ts` — config file discovery, loading, merging
-- `progress-reporter.test.ts` — output formatting across modes

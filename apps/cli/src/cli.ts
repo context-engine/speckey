@@ -2,9 +2,9 @@ import { extname } from "node:path";
 import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
 import type { WriteConfig } from "@speckey/database";
 import { CLIErrors } from "@speckey/constants";
+import { createLogger, createJsonLogger, type LogMode } from "@speckey/logger";
 import { createProgram, parseArgs } from "./args";
 import { ConfigLoader, DEFAULT_CONFIG } from "./config-loader";
-import { ProgressReporter } from "./progress-reporter";
 import { Command, ExitCode, type OutputMode, type ParseOptions } from "./types";
 
 /**
@@ -46,24 +46,29 @@ export class CLI {
             return ExitCode.SUCCESS;
         }
 
+        // Create logger based on output mode
+        const mode = this.getOutputMode(options);
+        const LOG_MODE_MAP: Record<OutputMode, LogMode> = {
+            quiet: "error",
+            normal: "info",
+            verbose: "debug",
+            json: "debug",
+        };
+        const logger = mode === "json"
+            ? createJsonLogger("speckey", LOG_MODE_MAP[mode])
+            : createLogger("speckey", LOG_MODE_MAP[mode]);
+
         // Build configuration based on command
         let config: PipelineConfig;
         try {
             config = await this.buildConfig(options.command, options);
         } catch (error) {
-            console.error(`Config error: ${error instanceof Error ? error.message : error}`);
+            logger.error(`Config error: ${error instanceof Error ? error.message : error}`);
             return ExitCode.CONFIG_ERROR;
         }
 
-        // Determine output mode
-        const mode = this.getOutputMode(options);
-        const reporter = new ProgressReporter(mode);
-
-        // Run pipeline
-        const result = await this.pipeline.run(config);
-
-        // Display command-specific result
-        this.displayResult(options.command, result, reporter, mode);
+        // Run pipeline — logger passed for streaming output
+        const result = await this.pipeline.run(config, logger);
 
         // Determine exit code
         return this.getExitCode(options.command, result);
@@ -134,13 +139,6 @@ export class CLI {
         if (options.quiet) return "quiet";
         if (options.verbose) return "verbose";
         return "normal";
-    }
-
-    private displayResult(command: Command, result: PipelineResult, reporter: ProgressReporter, mode: OutputMode): void {
-        for (const error of result.errors) {
-            reporter.error(error);
-        }
-        reporter.complete(command, result);
     }
 
     private getExitCode(command: Command, result: PipelineResult): number {
