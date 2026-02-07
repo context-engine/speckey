@@ -64,11 +64,6 @@ describe("parseArgs", () => {
             expect(result.json).toBe(true);
         });
 
-        it("should parse --serial flag", () => {
-            const result = parseArgs(["parse", "--serial"]);
-            expect(result.serial).toBe(true);
-        });
-
         it("should parse --no-config flag", () => {
             const result = parseArgs(["parse", "--no-config"]);
             expect(result.noConfig).toBe(true);
@@ -130,22 +125,6 @@ describe("parseArgs", () => {
             expect(result.dbPath).toBe("./data.db");
         });
 
-        it("should parse --workers with value", () => {
-            const result = parseArgs(["parse", "--workers", "4"]);
-            expect(result.workers).toBe(4);
-        });
-
-        it("should throw error when --workers value is out of range", () => {
-            expect(() => parseArgs(["parse", "--workers", "0"])).toThrow();
-        });
-
-        it("should throw error when --workers value is not a number", () => {
-            expect(() => parseArgs(["parse", "--workers", "abc"])).toThrow();
-        });
-
-        it("should throw error when --workers above max (33)", () => {
-            expect(() => parseArgs(["parse", "--workers", "33"])).toThrow();
-        });
     });
 
     // ============================================================
@@ -193,11 +172,10 @@ describe("parseArgs", () => {
             expect(result.exclude).toContain("*.test.md");
         });
 
-        it("should handle sync with db-path and workers", () => {
-            const result = parseArgs(["sync", "./specs", "--db-path", "./data.db", "--workers", "2"]);
+        it("should handle sync with db-path", () => {
+            const result = parseArgs(["sync", "./specs", "--db-path", "./data.db"]);
             expect(result.command).toBe(Command.SYNC);
             expect(result.dbPath).toBe("./data.db");
-            expect(result.workers).toBe(2);
         });
 
         it("should handle include with exclude and paths", () => {
@@ -255,9 +233,5 @@ describe("parseArgs", () => {
             expect(result.include).toEqual(["phase-1/**/*.md"]);
         });
 
-        it("should parse --workers=4 syntax", () => {
-            const result = parseArgs(["parse", "--workers=4"]);
-            expect(result.workers).toBe(4);
-        });
     });
 });

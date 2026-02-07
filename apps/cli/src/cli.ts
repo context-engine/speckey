@@ -1,6 +1,7 @@
 import { extname } from "node:path";
 import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
 import type { WriteConfig } from "@speckey/database";
+import { CLIErrors } from "@speckey/constants";
 import { createProgram, parseArgs } from "./args";
 import { ConfigLoader, DEFAULT_CONFIG } from "./config-loader";
 import { ProgressReporter } from "./progress-reporter";
@@ -23,6 +24,7 @@ export class CLI {
     async run(args: string[]): Promise<number> {
         let options: ParseOptions;
 
+        // Parse CLI arguments (unknown flags, missing subcommand, conflicting options → CONFIG_ERROR)
         try {
             options = parseArgs(args);
         } catch (error) {
@@ -30,12 +32,14 @@ export class CLI {
             return ExitCode.CONFIG_ERROR;
         }
 
+        // Handle --help: display usage and exit (parseArgs sets help=true instead of exiting directly)
         if (options.help) {
             const program = createProgram();
             console.log(program.helpInformation());
             return ExitCode.SUCCESS;
         }
 
+        // Handle --version: display version and exit
         if (options.version) {
             const program = createProgram();
             console.log(program.version());
@@ -90,7 +94,7 @@ export class CLI {
             const singlePath = options.paths[0];
             const ext = singlePath ? extname(singlePath) : "";
             if (ext && ext.toLowerCase() !== ".md") {
-                throw new Error(`Not a markdown file: "${singlePath}". Expected .md extension`);
+                throw new Error(CLIErrors.NOT_MARKDOWN(singlePath!));
             }
         }
 
@@ -111,7 +115,7 @@ export class CLI {
                 config.skipValidation = false;
                 const dbPath = options.dbPath;
                 if (!dbPath) {
-                    throw new Error("Database path required for sync. Use --db-path or set database.path in config");
+                    throw new Error(CLIErrors.DB_PATH_REQUIRED);
                 }
                 config.writeConfig = {
                     dbPath,

@@ -3,7 +3,7 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
-import { DiscoveryErrors } from "@speckey/errors";
+import { DiscoveryErrors } from "@speckey/constants";
 
 describe("FileDiscovery", () => {
 	const testDir = resolve("./test-temp-discovery");

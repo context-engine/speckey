@@ -3,7 +3,7 @@ import { ProgressReporter } from "../src/progress-reporter";
 import { Command } from "../src/types";
 import type { PipelineResult, PipelineStats, PipelineError } from "@speckey/core";
 import type { WriteResult } from "@speckey/database";
-import { DiscoveryErrors } from "@speckey/errors";
+import { DiscoveryErrors } from "@speckey/constants";
 
 describe("ProgressReporter", () => {
     let consoleLogs: string[];

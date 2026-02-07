@@ -20,18 +20,22 @@
         "speckey": "./src/bin.ts",
       },
       "dependencies": {
+        "@speckey/constants": "workspace:*",
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
-        "@speckey/errors": "workspace:*",
         "commander": "^14.0.3",
       },
+    },
+    "packages/constants": {
+      "name": "@speckey/constants",
+      "version": "0.1.0",
     },
     "packages/core": {
       "name": "@speckey/core",
       "version": "0.1.0",
       "dependencies": {
+        "@speckey/constants": "workspace:*",
         "@speckey/database": "workspace:*",
-        "@speckey/errors": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
       },
@@ -86,15 +90,11 @@
         "@speckey/mermaid-ast": "workspace:*",
       },
     },
-    "packages/errors": {
-      "name": "@speckey/errors",
-      "version": "0.1.0",
-    },
     "packages/io": {
       "name": "@speckey/io",
       "version": "0.1.0",
       "dependencies": {
-        "@speckey/errors": "workspace:*",
+        "@speckey/constants": "workspace:*",
       },
     },
     "packages/mermaid-ast": {
@@ -393,6 +393,8 @@
 
     "@speckey/cli": ["@speckey/cli@workspace:apps/cli"],
 
+    "@speckey/constants": ["@speckey/constants@workspace:packages/constants"],
+
     "@speckey/core": ["@speckey/core@workspace:packages/core"],
 
     "@speckey/database": ["@speckey/database@workspace:packages/database"],
@@ -400,8 +402,6 @@
     "@speckey/diagram-renderer": ["@speckey/diagram-renderer@workspace:packages/diagram-renderer"],
 
     "@speckey/diagram-svg": ["@speckey/diagram-svg@workspace:packages/diagram-svg"],
-
-    "@speckey/errors": ["@speckey/errors@workspace:packages/errors"],
 
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
 

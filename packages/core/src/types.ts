@@ -1,5 +1,5 @@
 import type { RoutedBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
-import type { UserErrorMessage } from "@speckey/errors";
+import type { UserErrorMessage } from "@speckey/constants";
 import type { ClassSpec } from "./package-registry/types";
 import type { WriteConfig, WriteResult } from "@speckey/database";
 

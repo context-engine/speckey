@@ -5,7 +5,7 @@
     "main": "./src/index.ts",
     "types": "./src/index.ts",
     "dependencies": {
-        "@speckey/errors": "workspace:*",
+        "@speckey/constants": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
         "@speckey/database": "workspace:*"

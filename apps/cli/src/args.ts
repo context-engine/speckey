@@ -1,8 +1,8 @@
 import {
     Command as CommanderProgram,
     CommanderError,
-    InvalidArgumentError,
 } from "commander";
+import { CLIDescriptions, CLIErrors } from "@speckey/constants";
 import { Command, type ParseOptions } from "./types";
 
 const VERSION = "0.1.0";
@@ -12,17 +12,6 @@ const VERSION = "0.1.0";
  */
 function collect(value: string, previous: string[]): string[] {
     return [...previous, value];
-}
-
-/**
- * Parse and validate --workers value.
- */
-function parseWorkers(value: string): number {
-    const n = Number.parseInt(value, 10);
-    if (Number.isNaN(n) || n < 1 || n > 32) {
-        throw new InvalidArgumentError("must be between 1 and 32");
-    }
-    return n;
 }
 
 /**
@@ -44,16 +33,10 @@ function addSharedOptions(cmd: CommanderProgram): CommanderProgram {
             collect,
             [],
         )
-        .option(
-            "--workers <n>",
-            "worker count (1-32, default: auto)",
-            parseWorkers,
-        )
         .option("--db-path <path>", "database path (sync command)")
         .option("-v, --verbose", "show detailed output", false)
         .option("-q, --quiet", "show errors only", false)
-        .option("--json", "output as JSON lines", false)
-        .option("--serial", "process files sequentially", false);
+        .option("--json", "output as JSON lines", false);
 }
 
 /**
@@ -63,7 +46,7 @@ export function createProgram(): CommanderProgram {
     const program = new CommanderProgram();
     program
         .name("speckey")
-        .description("Parse and validate mermaid class diagrams from markdown")
+        .description(CLIDescriptions.PROGRAM)
         .version(VERSION)
         .exitOverride()
         .configureOutput({
@@ -74,21 +57,21 @@ export function createProgram(): CommanderProgram {
     addSharedOptions(
         program
             .command("parse")
-            .description("Parse markdown files (phases 1-3)")
+            .description(CLIDescriptions.PARSE)
             .argument("[paths...]", "paths to process"),
     );
 
     addSharedOptions(
         program
             .command("validate")
-            .description("Parse and validate references (phases 1-4)")
+            .description(CLIDescriptions.VALIDATE)
             .argument("[paths...]", "paths to process"),
     );
 
     addSharedOptions(
         program
             .command("sync")
-            .description("Parse, validate, and write to database (phases 1-5)")
+            .description(CLIDescriptions.SYNC)
             .argument("[paths...]", "paths to process"),
     );
 
@@ -105,9 +88,7 @@ function buildParseOptions(
 ): ParseOptions {
     // Post-parse validation: conflicting flags
     if (opts.verbose && opts.quiet) {
-        throw new Error(
-            "Conflicting flags: --verbose and --quiet cannot be used together",
-        );
+        throw new Error(CLIErrors.CONFLICTING_FLAGS);
     }
 
     const configValue = opts.config;
@@ -120,8 +101,6 @@ function buildParseOptions(
         verbose: (opts.verbose as boolean) || false,
         quiet: (opts.quiet as boolean) || false,
         json: (opts.json as boolean) || false,
-        serial: (opts.serial as boolean) || false,
-        workers: opts.workers as number | undefined,
         noConfig: configValue === false,
         include: (opts.include as string[]) || [],
         exclude: (opts.exclude as string[]) || [],
@@ -148,8 +127,11 @@ export function parseArgs(args: string[]): ParseOptions {
         sync: Command.SYNC,
     };
 
+    // Register action handlers; they execute later when program.parse() is called.
     for (const cmd of program.commands) {
         const command = commandMap[cmd.name()];
+        // Skip commander-internal commands (e.g. help) that aren't in our map.
+        // Unknown user commands are caught later by the !result check (line 200).
         if (!command) continue;
 
         cmd.action((paths: string[], opts: Record<string, unknown>) => {
@@ -168,7 +150,6 @@ export function parseArgs(args: string[]): ParseOptions {
                     verbose: false,
                     quiet: false,
                     json: false,
-                    serial: false,
                     noConfig: false,
                     include: [],
                     exclude: [],
@@ -183,7 +164,6 @@ export function parseArgs(args: string[]): ParseOptions {
                     verbose: false,
                     quiet: false,
                     json: false,
-                    serial: false,
                     noConfig: false,
                     include: [],
                     exclude: [],
@@ -198,9 +178,7 @@ export function parseArgs(args: string[]): ParseOptions {
     }
 
     if (!result) {
-        throw new Error(
-            "Missing subcommand. Usage: speckey <parse|validate|sync> <path>",
-        );
+        throw new Error(CLIErrors.MISSING_SUBCOMMAND);
     }
 
     return result;

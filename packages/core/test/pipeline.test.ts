@@ -3,7 +3,7 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
-import { DiscoveryErrors } from "@speckey/errors";
+import { DiscoveryErrors } from "@speckey/constants";
 
 describe("ParsePipeline", () => {
     const testDir = resolve("./test-temp-core");

@@ -27,8 +27,6 @@ export interface ParseOptions {
     verbose: boolean;
     quiet: boolean;
     json: boolean;
-    serial: boolean;
-    workers?: number;
     noConfig: boolean;
     include: string[];
     exclude: string[];

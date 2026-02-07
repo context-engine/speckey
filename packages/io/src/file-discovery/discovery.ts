@@ -8,7 +8,7 @@ import {
 	type FileContents,
 	SkipReason,
 } from "./types";
-import { DiscoveryErrors, type UserErrorMessage } from "@speckey/errors";
+import { DiscoveryErrors, type UserErrorMessage } from "@speckey/constants";
 
 function toUserMessage(code: string): UserErrorMessage {
 	switch (code) {

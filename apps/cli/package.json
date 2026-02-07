@@ -2,13 +2,16 @@
     "name": "@speckey/cli",
     "version": "0.1.0",
     "type": "module",
+    "scripts": {
+        "speckey": "bun run ./src/bin.ts"
+    },
     "bin": {
         "speckey": "./src/bin.ts"
     },
     "dependencies": {
         "@speckey/core": "workspace:*",
         "@speckey/database": "workspace:*",
-        "@speckey/errors": "workspace:*",
+        "@speckey/constants": "workspace:*",
         "commander": "^14.0.3"
     }
 }

@@ -1,4 +1,4 @@
-import type { UserErrorMessage } from "@speckey/errors";
+import type { UserErrorMessage } from "@speckey/constants";
 
 /**
  * Configuration for file discovery.
