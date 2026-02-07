@@ -1,3 +1,4 @@
+import type { Logger, AppLogObj } from "@speckey/logger";
 import type { RoutedBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
 import type { UserErrorMessage } from "@speckey/constants";
 import type { ClassSpec } from "./package-registry/types";
@@ -170,4 +171,11 @@ export interface PipelineResult {
      * Database write result from Phase 5.
      */
     writeResult?: WriteResult;
+}
+
+/**
+ * Pipeline contract for injectable pipeline implementations.
+ */
+export interface Pipeline {
+    run(config: PipelineConfig, logger: Logger<AppLogObj>): Promise<PipelineResult>;
 }

@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import { ParsePipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
+import { type Pipeline, type PipelineConfig, type PipelineResult } from "@speckey/core";
 import type { WriteConfig } from "@speckey/database";
 import { CLIErrors } from "@speckey/constants";
 import { createLogger, createJsonLogger, type LogMode } from "@speckey/logger";
@@ -11,10 +11,10 @@ import { Command, ExitCode, type OutputMode, type ParseOptions } from "./types";
  * Main CLI class.
  */
 export class CLI {
-    private pipeline: ParsePipeline;
+    private pipeline: Pipeline;
 
-    constructor() {
-        this.pipeline = new ParsePipeline();
+    constructor(pipeline: Pipeline) {
+        this.pipeline = pipeline;
     }
 
     /**

@@ -8,6 +8,7 @@
         "@speckey/constants": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
-        "@speckey/database": "workspace:*"
+        "@speckey/database": "workspace:*",
+        "@speckey/logger": "workspace:*"
     }
 }

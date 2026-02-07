@@ -38,6 +38,7 @@
         "@speckey/constants": "workspace:*",
         "@speckey/database": "workspace:*",
         "@speckey/io": "workspace:*",
+        "@speckey/logger": "workspace:*",
         "@speckey/parser": "workspace:*",
       },
     },
