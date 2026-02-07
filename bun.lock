@@ -97,6 +97,13 @@
         "@speckey/constants": "workspace:*",
       },
     },
+    "packages/logger": {
+      "name": "@speckey/logger",
+      "version": "0.1.0",
+      "dependencies": {
+        "tslog": "^4.10.2",
+      },
+    },
     "packages/mermaid-ast": {
       "name": "@speckey/mermaid-ast",
       "version": "0.9.0",
@@ -404,6 +411,8 @@
     "@speckey/diagram-svg": ["@speckey/diagram-svg@workspace:packages/diagram-svg"],
 
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
+
+    "@speckey/logger": ["@speckey/logger@workspace:packages/logger"],
 
     "@speckey/mermaid-ast": ["@speckey/mermaid-ast@workspace:packages/mermaid-ast"],
 
@@ -1308,6 +1317,8 @@
     "ts-dedent": ["ts-dedent@2.2.0", "", {}, "sha512-q5W7tVM71e2xjHZTlgfTDoPF/SmqKG5hddq9SzR49CH2hayqRKJtQ4mtRlSxKaJlR/+9rEM+mnBHf7I2/BQcpQ=="],
 
     "tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
+
+    "tslog": ["tslog@4.10.2", "", {}, "sha512-XuELoRpMR+sq8fuWwX7P0bcj+PRNiicOKDEb3fGNURhxWVyykCi9BNq7c4uVz7h7P0sj8qgBsr5SWS6yBClq3g=="],
 
     "tunnel": ["tunnel@0.0.6", "", {}, "sha512-1h/Lnq9yajKY2PEbBadPXj3VxsDDu844OnaAo52UVmIzIvwwtBPIuNvkjuzBlTWpfJyUbG3ez0KSBibQkj4ojg=="],
 
