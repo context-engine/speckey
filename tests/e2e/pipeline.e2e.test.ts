@@ -3,7 +3,7 @@ import { join } from "path";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig } from "../../packages/core/src";
 import { OrphanPolicy } from "../../packages/database/src";
-import { DiscoveryErrors } from "../../packages/errors/src";
+import { DiscoveryErrors } from "../../packages/constants/src";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/e2e");
 
