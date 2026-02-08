@@ -22,13 +22,15 @@ export class CLI {
      * @returns Exit code
      */
     async run(args: string[]): Promise<number> {
+        // Default logger — ensures all errors (including arg parse) are structured
+        let logger = createLogger("speckey", "info");
         let options: ParseOptions;
 
         // Parse CLI arguments (unknown flags, missing subcommand, conflicting options → CONFIG_ERROR)
         try {
             options = parseArgs(args);
         } catch (error) {
-            console.error(`Error: ${error instanceof Error ? error.message : error}`);
+            logger.error(error instanceof Error ? error.message : String(error));
             return ExitCode.CONFIG_ERROR;
         }
 
@@ -46,7 +48,7 @@ export class CLI {
             return ExitCode.SUCCESS;
         }
 
-        // Create logger based on output mode
+        // Recreate logger with user's output mode
         const mode = this.getOutputMode(options);
         const LOG_MODE_MAP: Record<OutputMode, LogMode> = {
             quiet: "error",
@@ -54,7 +56,7 @@ export class CLI {
             verbose: "debug",
             json: "debug",
         };
-        const logger = mode === "json"
+        logger = mode === "json"
             ? createJsonLogger("speckey", LOG_MODE_MAP[mode])
             : createLogger("speckey", LOG_MODE_MAP[mode]);
 
