@@ -97,7 +97,7 @@ export class ParsePipeline {
         let validationReport: IntegrationValidationReport | undefined;
         if (!config.skipValidation) {
             const entries = deferredQueue.drain();
-            validationReport = this.integrationValidator.validate(entries, registry);
+            validationReport = this.integrationValidator.validate(entries, registry, validateLog);
             for (const err of validationReport.errors) {
                 errors.push({
                     phase: "integration_validate",
@@ -114,7 +114,7 @@ export class ParsePipeline {
         const validationPassed = !validationReport || validationReport.errors.length === 0;
         if (config.writeConfig && validationPassed) {
             const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
-            writeResult = this.writeToDatabase(definitions, config.writeConfig, errors);
+            writeResult = this.writeToDatabase(definitions, config.writeConfig, errors, writeLog);
         }
 
         // Aggregate stats
@@ -230,9 +230,10 @@ export class ParsePipeline {
         definitions: ClassSpec[],
         writeConfig: WriteConfig,
         errors: PipelineError[],
+        log?: Logger<AppLogObj>,
     ): WriteResult {
         const writer = new DgraphWriter();
-        const result = writer.write(definitions, writeConfig);
+        const result = writer.write(definitions, writeConfig, log);
 
         for (const err of result.errors) {
             errors.push({

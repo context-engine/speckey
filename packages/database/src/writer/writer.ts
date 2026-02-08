@@ -1,4 +1,5 @@
 import type { ClassSpec } from "@speckey/core";
+import type { Logger, AppLogObj } from "@speckey/logger";
 import type { Transaction } from "../transaction";
 import { TransactionManager } from "../transaction";
 import { OperationType } from "../transaction";
@@ -27,7 +28,8 @@ export class DgraphWriter {
 	/**
 	 * Write all definition ClassSpecs to Dgraph in a single transaction.
 	 */
-	write(classSpecs: ClassSpec[], config: WriteConfig): WriteResult {
+	write(classSpecs: ClassSpec[], config: WriteConfig, logger?: Logger<AppLogObj>): WriteResult {
+		logger?.debug("Starting database write", { entityCount: classSpecs.length, dbPath: config.dbPath });
 		const errors: WriteError[] = [];
 		let inserted = 0;
 		let updated = 0;
@@ -114,6 +116,7 @@ export class DgraphWriter {
 			});
 		}
 
+		logger?.info("Database write complete", { inserted, updated, deleted, orphaned: orphanedFqns.length, errors: errors.length });
 		return {
 			inserted,
 			updated,

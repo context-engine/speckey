@@ -47,6 +47,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@speckey/core": "workspace:*",
+        "@speckey/logger": "workspace:*",
       },
     },
     "packages/diagram-renderer": {
@@ -123,6 +124,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@speckey/core": "workspace:*",
+        "@speckey/logger": "workspace:*",
         "mermaid-ast": "^0.8.2",
         "remark-gfm": "^4.0.1",
         "remark-parse": "^11.0.0",

@@ -1,4 +1,5 @@
 import type { DeferredEntry, PackageRegistry } from "@speckey/core";
+import type { Logger, AppLogObj } from "@speckey/logger";
 import type {
 	ClassDiagramPayload,
 	IntegrationValidationReport,
@@ -20,7 +21,8 @@ export class IntegrationValidator {
 	/**
 	 * Validate all deferred entries for class diagram.
 	 */
-	validate(entries: DeferredEntry[], registry: PackageRegistry): IntegrationValidationReport {
+	validate(entries: DeferredEntry[], registry: PackageRegistry, logger?: Logger<AppLogObj>): IntegrationValidationReport {
+		logger?.debug("Starting integration validation", { entryCount: entries.length });
 		const resolved: ResolvedEntry[] = [];
 		const unresolved: UnresolvedEntry[] = [];
 		const errors: IntegrationError[] = [];
@@ -62,6 +64,11 @@ export class IntegrationValidator {
 			}
 		}
 
+		logger?.info("Integration validation complete", {
+			resolved: resolved.length,
+			unresolved: unresolved.length,
+			errors: errors.length,
+		});
 		return { resolved, unresolved, errors };
 	}
 

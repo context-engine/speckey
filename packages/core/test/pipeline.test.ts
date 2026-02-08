@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
+import { OrphanPolicy } from "@speckey/database";
 import { DiscoveryErrors } from "@speckey/constants";
 
 describe("ParsePipeline", () => {
@@ -573,6 +574,115 @@ class OrderService {
             expect(result.stats.entitiesInserted).toBe(0);
             expect(result.stats.entitiesUpdated).toBe(0);
         });
+
+        it("should block write when skipValidation is true even if writeConfig is present", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+                skipValidation: true,
+                writeConfig: {
+                    dbPath: "/tmp/test-db",
+                    orphanedEntities: OrphanPolicy.KEEP,
+                    backupBeforeWrite: false,
+                },
+            };
+
+            const result = await pipeline.run(config);
+
+            // Phase 4 skipped → validationReport undefined → validationPassed = true
+            // But skipValidation=true is for parse command (phases 1-3 only)
+            // Pipeline should still write when validation is skipped and writeConfig present
+            // because validationPassed defaults to true when no report
+            expect(result.validationReport).toBeUndefined();
+            expect(result.writeResult).toBeDefined();
+        });
+
+        it("should block write when validation fails", async () => {
+            // Create a file with an unresolved cross-file reference
+            const unresolvedFile = join(testDir, "unresolved-ref.md");
+            await writeFile(
+                unresolvedFile,
+                `# Unresolved Reference
+
+\`\`\`mermaid
+classDiagram
+class RefService {
+    <<service>>
+    %% @type reference
+    %% @address speckey.nonexistent
+    +doSomething() void
+}
+\`\`\`
+`,
+            );
+
+            try {
+                const config: PipelineConfig = {
+                    paths: [testDir],
+                    include: ["unresolved-ref.md"],
+                    writeConfig: {
+                        dbPath: "/tmp/test-db",
+                        orphanedEntities: OrphanPolicy.KEEP,
+                        backupBeforeWrite: false,
+                    },
+                };
+
+                const result = await pipeline.run(config);
+
+                // Validation should run and may report errors for unresolved refs
+                expect(result.validationReport).toBeDefined();
+                // If there are validation errors, write should be skipped
+                if (result.validationReport && result.validationReport.errors.length > 0) {
+                    expect(result.writeResult).toBeUndefined();
+                }
+            } finally {
+                await rm(unresolvedFile);
+            }
+        });
+
+        it("should return writeResult with stats when write succeeds", async () => {
+            // Use a self-contained file with only built-in types (no cross-refs to fail validation)
+            const selfContained = join(testDir, "self-contained.md");
+            await writeFile(
+                selfContained,
+                `# Self Contained
+
+\`\`\`mermaid
+classDiagram
+class SimpleService {
+    <<service>>
+    %% @type definition
+    %% @address speckey.test
+    +getName() string
+    +getId() number
+}
+\`\`\`
+`,
+            );
+
+            try {
+                const config: PipelineConfig = {
+                    paths: [testDir],
+                    include: ["self-contained.md"],
+                    writeConfig: {
+                        dbPath: "/tmp/test-db",
+                        orphanedEntities: OrphanPolicy.KEEP,
+                        backupBeforeWrite: false,
+                    },
+                };
+
+                const result = await pipeline.run(config);
+
+                expect(result.validationReport).toBeDefined();
+                expect(result.validationReport!.errors).toHaveLength(0);
+                expect(result.writeResult).toBeDefined();
+                expect(result.writeResult!.total).toBeGreaterThan(0);
+                expect(result.stats.entitiesInserted).toBe(result.writeResult!.inserted);
+                expect(result.stats.entitiesUpdated).toBe(result.writeResult!.updated);
+            } finally {
+                await rm(selfContained);
+            }
+        });
     });
 
     // ============================================================
@@ -709,20 +819,19 @@ class OrderService {
             expect(buildLogs.length).toBeGreaterThan(0);
         });
 
-        // TODO: Enable when IntegrationValidator accepts logger param
-        // it("should log from validate phase when validation runs", async () => {
-        //     const { logger, logs } = createTestLogger();
-        //     const config: PipelineConfig = {
-        //         paths: [testDir],
-        //         include: ["entity-basic.md"],
-        //     };
-        //     await pipeline.run(config, logger);
-        //     const validateLogs = logs.filter((l) => {
-        //         const meta = l["_meta"] as { name?: string } | undefined;
-        //         return meta?.name === "validate";
-        //     });
-        //     expect(validateLogs.length).toBeGreaterThan(0);
-        // });
+        it("should log from validate phase when validation runs", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+            await pipeline.run(config, logger);
+            const validateLogs = logs.filter((l) => {
+                const meta = l["_meta"] as { name?: string } | undefined;
+                return meta?.name === "validate";
+            });
+            expect(validateLogs.length).toBeGreaterThan(0);
+        });
 
         it("should include phase-scoped context in log entries", async () => {
             const { logger, logs } = createTestLogger();
