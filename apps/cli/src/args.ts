@@ -143,6 +143,10 @@ export function parseArgs(args: string[]): ParseOptions {
         program.parse(args, { from: "user" });
     } catch (err) {
         if (err instanceof CommanderError) {
+            // commander.help: thrown when no subcommand matches (empty args) → missing subcommand
+            if (err.code === "commander.help") {
+                throw new Error(CLIErrors.MISSING_SUBCOMMAND);
+            }
             if (err.code === "commander.helpDisplayed") {
                 return {
                     command: Command.PARSE,

@@ -39,6 +39,10 @@ describe("parseArgs", () => {
             expect(() => parseArgs(["unknown", "./specs"])).toThrow("unknown command");
         });
 
+        it("should throw with actionable message for empty args", () => {
+            expect(() => parseArgs([])).toThrow("Missing subcommand");
+        });
+
         it("should throw when only flags provided (no subcommand)", () => {
             expect(() => parseArgs(["--verbose"])).toThrow();
         });
