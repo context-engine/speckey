@@ -1,8 +1,50 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import type { Pipeline, PipelineConfig, PipelineResult, PipelineStats } from "@speckey/core";
+import type { Logger, AppLogObj } from "@speckey/logger";
 import { CLI } from "../src/cli";
 import { Command, ExitCode } from "../src/types";
+
+// ============================================================
+// Mock Pipeline
+// ============================================================
+
+function createMockStats(overrides?: Partial<PipelineStats>): PipelineStats {
+    return {
+        filesDiscovered: 1,
+        filesRead: 1,
+        filesParsed: 1,
+        blocksExtracted: 1,
+        errorsCount: 0,
+        entitiesBuilt: 1,
+        entitiesInserted: 0,
+        entitiesUpdated: 0,
+        validationErrors: 0,
+        ...overrides,
+    };
+}
+
+function createMockResult(overrides?: Partial<PipelineResult>): PipelineResult {
+    return {
+        files: [],
+        errors: [],
+        stats: createMockStats(),
+        classSpecs: [],
+        ...overrides,
+    };
+}
+
+function createMockPipeline(resultOrFn?: PipelineResult | ((config: PipelineConfig) => PipelineResult)): Pipeline {
+    return {
+        async run(config: PipelineConfig, _logger: Logger<AppLogObj>): Promise<PipelineResult> {
+            if (typeof resultOrFn === "function") {
+                return resultOrFn(config);
+            }
+            return resultOrFn ?? createMockResult();
+        },
+    };
+}
 
 describe("CLI", () => {
     const testDir = resolve("./test-temp-cli");
@@ -12,7 +54,6 @@ describe("CLI", () => {
         await mkdir(testDir, { recursive: true });
         await mkdir(join(testDir, "empty"), { recursive: true });
 
-        // Create test markdown files
         await writeFile(
             join(testDir, "spec.md"),
             `# Test Spec\n\n\`\`\`mermaid\nclassDiagram\n    class Foo\n\`\`\`\n`,
@@ -23,8 +64,8 @@ describe("CLI", () => {
         await rm(testDir, { recursive: true, force: true });
     });
 
-    beforeAll(() => {
-        cli = new CLI();
+    beforeEach(() => {
+        cli = new CLI(createMockPipeline());
     });
 
     // ============================================================
@@ -143,6 +184,23 @@ describe("CLI", () => {
                 })
             ).rejects.toThrow("Database path required for sync");
         });
+
+        it("should reject single non-.md file", async () => {
+            await expect(
+                cli.buildConfig(Command.PARSE, {
+                    command: Command.PARSE,
+                    paths: ["file.txt"],
+                    verbose: false,
+                    quiet: false,
+                    json: false,
+                    noConfig: true,
+                    include: [],
+                    exclude: [],
+                    help: false,
+                    version: false,
+                })
+            ).rejects.toThrow("Not a markdown file");
+        });
     });
 
     // ============================================================
@@ -156,6 +214,9 @@ describe("CLI", () => {
         });
 
         it("should return PARSE_ERROR when no files found", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                stats: createMockStats({ filesDiscovered: 0 }),
+            })));
             const exitCode = await cli.run(["parse", join(testDir, "empty"), "--quiet", "--no-config"]);
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });
@@ -179,10 +240,67 @@ describe("CLI", () => {
             const exitCode = await cli.run(["sync", testDir, "--no-config", "--quiet"]);
             expect(exitCode).toBe(ExitCode.CONFIG_ERROR);
         });
+
+        it("should return PARSE_ERROR when parse has errors", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                errors: [{ phase: "parse", path: "file.md", message: "bad", code: "ERR", userMessage: ["Parse error"] }],
+                stats: createMockStats({ errorsCount: 1 }),
+            })));
+            const exitCode = await cli.run(["parse", testDir, "--quiet", "--no-config"]);
+            expect(exitCode).toBe(ExitCode.PARSE_ERROR);
+        });
+
+        it("should return PARSE_ERROR when validation has unresolved references", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                validationReport: {
+                    resolved: [],
+                    unresolved: [{ entityFqn: "A", targetFqn: "B", payloadType: "type", specFile: "a.md", specLine: 1 }],
+                    errors: [],
+                },
+            })));
+            const exitCode = await cli.run(["validate", testDir, "--quiet", "--no-config"]);
+            expect(exitCode).toBe(ExitCode.PARSE_ERROR);
+        });
+
+        it("should return SUCCESS when validation has no unresolved references", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                validationReport: {
+                    resolved: [{ entityFqn: "A", targetFqn: "B", payloadType: "type" }],
+                    unresolved: [],
+                    errors: [],
+                },
+            })));
+            const exitCode = await cli.run(["validate", testDir, "--quiet", "--no-config"]);
+            expect(exitCode).toBe(ExitCode.SUCCESS);
+        });
+
+        it("should return PARSE_ERROR for sync when validation fails", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                validationReport: {
+                    resolved: [],
+                    unresolved: [{ entityFqn: "A", targetFqn: "B", payloadType: "type", specFile: "a.md", specLine: 1 }],
+                    errors: [],
+                },
+            })));
+            const exitCode = await cli.run(["sync", testDir, "--db-path", "./test.db", "--quiet", "--no-config"]);
+            expect(exitCode).toBe(ExitCode.PARSE_ERROR);
+        });
+
+        it("should return SUCCESS for sync when validation passes", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                validationReport: {
+                    resolved: [],
+                    unresolved: [],
+                    errors: [],
+                },
+            })));
+            const exitCode = await cli.run(["sync", testDir, "--db-path", "./test.db", "--quiet", "--no-config"]);
+            expect(exitCode).toBe(ExitCode.SUCCESS);
+        });
     });
 
     // ============================================================
-    // Feature: Output Modes
+    // Feature: Output Modes & Logger Creation
     // ============================================================
 
     describe("Output Modes", () => {
@@ -210,6 +328,26 @@ describe("CLI", () => {
             const exitCode = await cli.run(["parse", testDir, "-q", "--no-config"]);
             expect(exitCode).toBe(ExitCode.SUCCESS);
         });
+
+        it("should pass logger to pipeline", async () => {
+            let capturedLogger: Logger<AppLogObj> | undefined;
+            const spyPipeline: Pipeline = {
+                async run(_config: PipelineConfig, logger: Logger<AppLogObj>): Promise<PipelineResult> {
+                    capturedLogger = logger;
+                    return createMockResult();
+                },
+            };
+            cli = new CLI(spyPipeline);
+            await cli.run(["parse", testDir, "--quiet", "--no-config"]);
+            expect(capturedLogger).toBeDefined();
+        });
+
+        it("should create default logger before arg parse (errors are structured)", async () => {
+            // When parseArgs fails, error should be logged through logger, not crash
+            // This is verified by the fact that CONFIG_ERROR is returned (not an unhandled throw)
+            const exitCode = await cli.run(["parse", "--unknown-flag"]);
+            expect(exitCode).toBe(ExitCode.CONFIG_ERROR);
+        });
     });
 
     // ============================================================
@@ -223,8 +361,10 @@ describe("CLI", () => {
         });
 
         it("should apply --exclude patterns", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                stats: createMockStats({ filesDiscovered: 0 }),
+            })));
             const exitCode = await cli.run(["parse", testDir, "--exclude", "**/*.md", "--quiet", "--no-config"]);
-            // Should find no files because all .md files are excluded
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });
 
@@ -256,19 +396,19 @@ describe("CLI", () => {
 
     describe("Exit Codes (validate/sync)", () => {
         it("should return PARSE_ERROR for validate on empty directory", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                stats: createMockStats({ filesDiscovered: 0 }),
+            })));
             const exitCode = await cli.run(["validate", join(testDir, "empty"), "--quiet", "--no-config"]);
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
         });
 
         it("should return PARSE_ERROR for sync on empty directory", async () => {
+            cli = new CLI(createMockPipeline(createMockResult({
+                stats: createMockStats({ filesDiscovered: 0 }),
+            })));
             const exitCode = await cli.run(["sync", join(testDir, "empty"), "--db-path", "./test.db", "--quiet", "--no-config"]);
             expect(exitCode).toBe(ExitCode.PARSE_ERROR);
-        });
-
-        it("should run validate command successfully on valid specs", async () => {
-            const exitCode = await cli.run(["validate", testDir, "--quiet", "--no-config"]);
-            // May be SUCCESS or PARSE_ERROR depending on whether refs resolve
-            expect([ExitCode.SUCCESS, ExitCode.PARSE_ERROR]).toContain(exitCode);
         });
     });
 

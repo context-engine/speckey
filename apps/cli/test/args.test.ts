@@ -143,6 +143,14 @@ describe("parseArgs", () => {
         it("should throw error for --verbose + --quiet conflict", () => {
             expect(() => parseArgs(["parse", "--verbose", "--quiet"])).toThrow("Conflicting flags");
         });
+
+        it("should throw error for --config without value", () => {
+            expect(() => parseArgs(["parse", "--config"])).toThrow();
+        });
+
+        it("should throw error for --include without value", () => {
+            expect(() => parseArgs(["parse", "--include"])).toThrow();
+        });
     });
 
     // ============================================================

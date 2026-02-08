@@ -31,6 +31,17 @@ describe("ConfigLoader", () => {
             await rm(configPath);
         });
 
+        it("should find .speckey.json alternative", async () => {
+            const configPath = join(testDir, ".speckey.json");
+            await writeFile(configPath, JSON.stringify({ include: ["*.md"] }));
+
+            const found = ConfigLoader.findConfigFile(testDir);
+
+            expect(found).toBe(configPath);
+
+            await rm(configPath);
+        });
+
         it("should return undefined when no config exists", () => {
             const found = ConfigLoader.findConfigFile(testDir);
             expect(found).toBeUndefined();
