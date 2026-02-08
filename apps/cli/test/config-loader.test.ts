@@ -81,6 +81,58 @@ describe("ConfigLoader", () => {
             }
         });
 
+        it("should prefer project config over user home config", async () => {
+            // Priority 2 (walk-up) should beat priority 3 (~/.config/speckey/config.json)
+            // Place a config in testDir (which has .git, so it's the git root)
+            const projectConfig = join(testDir, "speckey.config.json");
+            const homeConfigDir = join(testDir, "fake-home", ".config", "speckey");
+            const homeConfig = join(homeConfigDir, "config.json");
+
+            await mkdir(homeConfigDir, { recursive: true });
+            await writeFile(projectConfig, JSON.stringify({ include: ["project.md"] }));
+            await writeFile(homeConfig, JSON.stringify({ include: ["home.md"] }));
+
+            const originalHome = process.env.HOME;
+            process.env.HOME = join(testDir, "fake-home");
+
+            try {
+                const found = ConfigLoader.findConfigFile(testDir);
+                expect(found).toBe(projectConfig);
+            } finally {
+                if (originalHome === undefined) {
+                    delete process.env.HOME;
+                } else {
+                    process.env.HOME = originalHome;
+                }
+                await rm(projectConfig);
+                await rm(join(testDir, "fake-home"), { recursive: true });
+            }
+        });
+
+        it("should fall back to user home config when no project config exists", async () => {
+            // No config in testDir walk-up → should find ~/.config/speckey/config.json
+            const homeConfigDir = join(testDir, "fake-home", ".config", "speckey");
+            const homeConfig = join(homeConfigDir, "config.json");
+
+            await mkdir(homeConfigDir, { recursive: true });
+            await writeFile(homeConfig, JSON.stringify({ include: ["home.md"] }));
+
+            const originalHome = process.env.HOME;
+            process.env.HOME = join(testDir, "fake-home");
+
+            try {
+                const found = ConfigLoader.findConfigFile(testDir);
+                expect(found).toBe(homeConfig);
+            } finally {
+                if (originalHome === undefined) {
+                    delete process.env.HOME;
+                } else {
+                    process.env.HOME = originalHome;
+                }
+                await rm(join(testDir, "fake-home"), { recursive: true });
+            }
+        });
+
         it("should prefer --config (caller) over SPECKEY_CONFIG", async () => {
             // This tests that when a caller provides a path, it takes priority.
             // The caller (CLI) checks --config before calling findConfigFile.

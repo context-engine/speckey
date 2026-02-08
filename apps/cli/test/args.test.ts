@@ -84,6 +84,11 @@ describe("parseArgs", () => {
             const result = parseArgs(["parse", "./specs", "-q"]);
             expect(result.quiet).toBe(true);
         });
+
+        it("should parse -h as help", () => {
+            const result = parseArgs(["-h"]);
+            expect(result.help).toBe(true);
+        });
     });
 
     // ============================================================
