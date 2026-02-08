@@ -16,6 +16,7 @@ import { ClassSpecType } from "./package-registry/types";
 import type { ClassSpec } from "./package-registry/types";
 import { PackageRegistry } from "./package-registry";
 import { DeferredValidationQueue } from "./deferred-validation-queue";
+import type { Logger, AppLogObj } from "@speckey/logger";
 import {
     DEFAULT_CONFIG,
     type ParsedFile,
@@ -48,10 +49,17 @@ export class ParsePipeline {
     /**
      * Run the full parsing pipeline.
      */
-    async run(config: PipelineConfig): Promise<PipelineResult> {
+    async run(config: PipelineConfig, logger?: Logger<AppLogObj>): Promise<PipelineResult> {
         const errors: PipelineError[] = [];
         const parsedFiles: ParsedFile[] = [];
         const allClassSpecs: ClassSpec[] = [];
+
+        // Create phase-scoped child loggers
+        const discoveryLog = logger?.getSubLogger({ name: "discovery" });
+        const parseLog = logger?.getSubLogger({ name: "parse" });
+        const buildLog = logger?.getSubLogger({ name: "build" });
+        const validateLog = logger?.getSubLogger({ name: "validate" });
+        const writeLog = logger?.getSubLogger({ name: "write" });
 
         // Shared instances for entity building (one per run)
         const registry = new PackageRegistry();
@@ -71,24 +79,27 @@ export class ParsePipeline {
             config.paths,
             resolvedConfig,
             errors,
+            discoveryLog,
         );
 
         // Phase 1b: Read files
-        const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors);
+        const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors, discoveryLog);
 
         // Phase 2: Parse each file (extract mermaid blocks)
-        const parseStats = this.parse(fileContents, parsedFiles, errors);
+        const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
 
         // Phase 3a: For each file, extract class diagrams, validate, build entities
         for (const file of parsedFiles) {
-            this.buildEntities(file, registry, deferredQueue, typeResolver, allClassSpecs, errors);
+            this.buildEntities(file, registry, deferredQueue, typeResolver, allClassSpecs, errors, buildLog);
         }
 
         // Phase 4: Integration validation
         let validationReport: IntegrationValidationReport | undefined;
         if (!config.skipValidation) {
             const entries = deferredQueue.drain();
+            validateLog?.info("Draining deferred queue", { entries: entries.length });
             validationReport = this.integrationValidator.validate(entries, registry);
+            validateLog?.info("Validation complete", { errors: validationReport.errors.length });
             for (const err of validationReport.errors) {
                 errors.push({
                     phase: "integration_validate",
@@ -105,7 +116,9 @@ export class ParsePipeline {
         const validationPassed = !validationReport || validationReport.errors.length === 0;
         if (config.writeConfig && validationPassed) {
             const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
+            writeLog?.info("Writing definitions", { count: definitions.length });
             writeResult = this.writeToDatabase(definitions, config.writeConfig, errors);
+            writeLog?.info("Write complete", { inserted: writeResult.inserted, updated: writeResult.updated });
         }
 
         // Aggregate stats
@@ -134,15 +147,18 @@ export class ParsePipeline {
         typeResolver: TypeResolver,
         allClassSpecs: ClassSpec[],
         errors: PipelineError[],
+        log?: Logger<AppLogObj>,
     ): void {
         for (const routedBlock of file.blocks) {
             if (routedBlock.diagramType !== DiagramType.CLASS_DIAGRAM) continue;
 
             try {
                 // Phase 3a.0: Extract parsed classes from mermaid block
+                log?.debug("Extracting class diagram", { file: file.path });
                 const diagramResult = this.classExtractor.extract(routedBlock.block);
 
                 if (diagramResult.parseError) {
+                    log?.warn("Extract parse error", { file: file.path, error: diagramResult.parseError });
                     errors.push({
                         phase: "extract",
                         path: file.path,
@@ -155,6 +171,7 @@ export class ParsePipeline {
                 if (diagramResult.classes.length === 0) continue;
 
                 // Phase 3a.1: Unit validation
+                log?.debug("Validating classes", { count: diagramResult.classes.length });
                 const validationReport = this.classDiagramValidator.validate(diagramResult);
 
                 if (validationReport.validClasses.length === 0) continue;
@@ -169,6 +186,7 @@ export class ParsePipeline {
                 }
 
                 // Phase 3a.2: Build entities
+                log?.debug("Building entities", { validClasses: validationReport.validClasses.length });
                 const entityBuilder = new EntityBuilder();
                 const buildResult = entityBuilder.buildClassSpecs(
                     validationReport.validClasses,
@@ -183,6 +201,7 @@ export class ParsePipeline {
                 );
 
                 for (const err of buildResult.errors) {
+                    log?.warn("Build error", { file: file.path, code: err.code });
                     errors.push({
                         phase: "build",
                         path: file.path,
@@ -193,8 +212,10 @@ export class ParsePipeline {
                 }
 
                 allClassSpecs.push(...buildResult.classSpecs);
+                log?.debug("Built classSpecs", { count: buildResult.classSpecs.length });
             } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
+                log?.error("Extract failed", { file: file.path, error: msg });
                 errors.push({
                     phase: "extract",
                     path: file.path,
@@ -242,10 +263,12 @@ export class ParsePipeline {
             maxFileSizeMb: number;
         },
         errors: PipelineError[],
+        log?: Logger<AppLogObj>,
     ): Promise<string[]> {
         const allFiles: string[] = [];
 
         for (const rootDir of paths) {
+            log?.debug("Discovering files", { rootDir });
             const result = await this.fileDiscovery.discover({
                 rootDir,
                 include: config.include,
@@ -256,6 +279,7 @@ export class ParsePipeline {
 
             // Collect discovery errors
             for (const err of result.errors) {
+                log?.warn("Discovery error", { path: err.path, code: err.code });
                 errors.push({
                     phase: "discovery",
                     path: err.path,
@@ -268,6 +292,7 @@ export class ParsePipeline {
             allFiles.push(...result.files);
         }
 
+        log?.info("Discovery complete", { filesFound: allFiles.length });
         return allFiles;
     }
 
@@ -278,11 +303,14 @@ export class ParsePipeline {
         files: string[],
         maxFileSizeMb: number,
         errors: PipelineError[],
+        log?: Logger<AppLogObj>,
     ): Promise<{ path: string; content: string }[]> {
+        log?.debug("Reading files", { count: files.length });
         const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb);
 
         // Collect read errors
         for (const err of result.errors) {
+            log?.warn("Read error", { path: err.path, code: err.code });
             errors.push({
                 phase: "read",
                 path: err.path,
@@ -292,6 +320,7 @@ export class ParsePipeline {
             });
         }
 
+        log?.info("Read complete", { filesRead: result.contents.length });
         return result.contents;
     }
 
@@ -302,16 +331,19 @@ export class ParsePipeline {
         contents: { path: string; content: string }[],
         parsedFiles: ParsedFile[],
         errors: PipelineError[],
+        log?: Logger<AppLogObj>,
     ): { blocksExtracted: number } {
         let blocksExtracted = 0;
 
         for (const file of contents) {
+            log?.debug("Parsing file", { file: file.path });
             const parseResult = this.markdownParser.parse(file.content, file.path);
 
             // Collect parse errors
             const realErrors = parseResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);
             if (realErrors.length > 0) {
                 for (const err of realErrors) {
+                    log?.warn("Parse error", { file: file.path, line: err.line });
                     errors.push({
                         phase: "parse",
                         path: file.path,
@@ -334,6 +366,7 @@ export class ParsePipeline {
             blocksExtracted += parseResult.routedBlocks.length;
         }
 
+        log?.info("Parse complete", { filesParsed: parsedFiles.length, blocksExtracted });
         return { blocksExtracted };
     }
 }

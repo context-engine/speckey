@@ -4,4 +4,4 @@ export {
 	type AppLogObj,
 	type LogMode,
 } from "./logger";
-export type { Logger } from "tslog";
+export { Logger } from "tslog";

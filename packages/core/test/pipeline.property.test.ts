@@ -102,7 +102,7 @@ describe("ParsePipeline - Property Tests", () => {
                         const config: PipelineConfig = { paths };
                         const result = await pipeline.run(config);
 
-                        const validPhases = ["discovery", "read", "parse"];
+                        const validPhases = ["discovery", "read", "parse", "extract", "unit_validate", "build", "integration_validate", "write"];
                         for (const error of result.errors) {
                             expect(validPhases).toContain(error.phase);
                             expect(typeof error.path).toBe("string");

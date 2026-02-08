@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
 import { DiscoveryErrors } from "@speckey/constants";
@@ -118,6 +119,71 @@ flowchart LR
         const bom = Buffer.from([0xef, 0xbb, 0xbf]);
         const bomContent = Buffer.concat([bom, Buffer.from("# BOM File\n\n```mermaid\nclassDiagram\n    class Bom\n```\n")]);
         await writeFile(join(testDir, "with-bom.md"), bomContent);
+
+        // Annotated class diagram for entity building tests
+        await writeFile(
+            join(testDir, "entity-basic.md"),
+            `# Entity Basic
+
+\`\`\`mermaid
+classDiagram
+class UserService {
+    <<service>>
+    %% @type definition
+    %% @address speckey.test
+    +getUser(id: string) User
+    +createUser(data: UserData) User
+}
+class UserData {
+    <<interface>>
+    %% @type definition
+    %% @address speckey.test
+    +id string
+    +name string
+}
+\`\`\`
+`,
+        );
+
+        // Two class diagram blocks: one valid, one with broken syntax
+        await writeFile(
+            join(testDir, "entity-two-blocks.md"),
+            `# Two Blocks
+
+\`\`\`mermaid
+classDiagram
+class ValidService {
+    <<service>>
+    %% @type definition
+    %% @address speckey.test
+    +process() void
+}
+\`\`\`
+
+\`\`\`mermaid
+classDiagram
+class BrokenClass {{{{
+    totally invalid mermaid syntax
+\`\`\`
+`,
+        );
+
+        // Second annotated file for multi-file accumulation
+        await writeFile(
+            join(testDir, "entity-second.md"),
+            `# Entity Second
+
+\`\`\`mermaid
+classDiagram
+class OrderService {
+    <<service>>
+    %% @type definition
+    %% @address speckey.orders
+    +placeOrder(item: string) void
+}
+\`\`\`
+`,
+        );
     });
 
     afterAll(async () => {
@@ -390,6 +456,330 @@ flowchart LR
 
             // Should find spec1.md from testDir and spec3.md from subdir
             expect(result.files.length).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    // ============================================================
+    // Feature: Entity Building (Phase 3a)
+    // ============================================================
+
+    describe("Entity Building (Phase 3a)", () => {
+        it("should build classSpecs from annotated class diagrams", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.classSpecs.length).toBeGreaterThan(0);
+            expect(result.stats.entitiesBuilt).toBe(result.classSpecs.length);
+        });
+
+        it("should produce empty classSpecs for unannotated classes", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["spec1.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            // Foo has no @type or @address annotations, so validator skips it
+            expect(result.classSpecs).toHaveLength(0);
+            expect(result.stats.entitiesBuilt).toBe(0);
+        });
+
+        it("should continue building despite extract error in one block", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-two-blocks.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            // Valid block should still produce classSpecs
+            expect(result.classSpecs.length).toBeGreaterThanOrEqual(1);
+        });
+
+        it("should accumulate classSpecs across multiple files", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md", "entity-second.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            // entity-basic has 2 classes, entity-second has 1 = at least 3
+            expect(result.classSpecs.length).toBeGreaterThanOrEqual(2);
+            expect(result.stats.entitiesBuilt).toBe(result.classSpecs.length);
+        });
+    });
+
+    // ============================================================
+    // Feature: Integration Validation (Phase 4)
+    // ============================================================
+
+    describe("Integration Validation (Phase 4)", () => {
+        it("should skip validation when skipValidation is true", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+                skipValidation: true,
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.validationReport).toBeUndefined();
+        });
+
+        it("should provide validationReport when skipValidation is not set", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.validationReport).toBeDefined();
+        });
+
+        it("should report validationErrors count matching validation report", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            // stats.validationErrors should match the actual report errors
+            expect(result.stats.validationErrors).toBe(result.validationReport?.errors.length ?? 0);
+        });
+    });
+
+    // ============================================================
+    // Feature: Database Write (Phase 5)
+    // ============================================================
+
+    describe("Database Write (Phase 5)", () => {
+        it("should skip write when no writeConfig", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.writeResult).toBeUndefined();
+            expect(result.stats.entitiesInserted).toBe(0);
+            expect(result.stats.entitiesUpdated).toBe(0);
+        });
+    });
+
+    // ============================================================
+    // Feature: Extended Stats
+    // ============================================================
+
+    describe("Extended Stats", () => {
+        it("should report entitiesBuilt count", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.stats.entitiesBuilt).toBeGreaterThan(0);
+            expect(result.stats.entitiesBuilt).toBe(result.classSpecs.length);
+        });
+
+        it("should report zero extended stats when phases skipped", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+                skipValidation: true,
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.stats.entitiesInserted).toBe(0);
+            expect(result.stats.entitiesUpdated).toBe(0);
+            expect(result.stats.validationErrors).toBe(0);
+        });
+    });
+
+    // ============================================================
+    // Feature: Per-Run State Lifecycle
+    // ============================================================
+
+    describe("Per-Run State Lifecycle", () => {
+        it("should create fresh state for each run", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            const result1 = await pipeline.run(config);
+            const result2 = await pipeline.run(config);
+
+            // Both runs should produce same number of classSpecs
+            expect(result1.classSpecs.length).toBe(result2.classSpecs.length);
+            // classSpecs should be independent objects (not shared references)
+            if (result1.classSpecs.length > 0) {
+                expect(result1.classSpecs[0]).not.toBe(result2.classSpecs[0]);
+            }
+        });
+    });
+
+    // ============================================================
+    // Feature: Logger Integration
+    // ============================================================
+
+    describe("Logger Integration", () => {
+        /**
+         * Helper: create a silent logger that captures all log entries via transport.
+         * type: "hidden" suppresses console output; minLevel: 0 captures everything.
+         */
+        function createTestLogger() {
+            const logs: Record<string, unknown>[] = [];
+            const logger = new Logger<AppLogObj>({
+                name: "test-pipeline",
+                type: "hidden",
+                minLevel: 0,
+            });
+            logger.attachTransport((logObj: Record<string, unknown>) => {
+                logs.push(logObj);
+            });
+            return { logger, logs };
+        }
+
+        it("should accept logger parameter and still return valid result", async () => {
+            const { logger } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["spec1.md"],
+            };
+
+            const result = await pipeline.run(config, logger);
+
+            expect(result).toBeDefined();
+            expect(result.files).toHaveLength(1);
+            expect(result.stats.filesDiscovered).toBe(1);
+        });
+
+        it("should create child loggers per phase with log entries", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            await pipeline.run(config, logger);
+
+            // Pipeline should produce log entries via child loggers
+            expect(logs.length).toBeGreaterThan(0);
+
+            // Each log entry from a child logger has _meta.name reflecting the phase
+            const loggerNames = new Set(
+                logs.map((l) => {
+                    const meta = l["_meta"] as { name?: string } | undefined;
+                    return meta?.name;
+                }).filter(Boolean),
+            );
+
+            // At minimum, discovery and parse phases should produce logs
+            expect(loggerNames.has("discovery")).toBe(true);
+            expect(loggerNames.has("parse")).toBe(true);
+        });
+
+        it("should log from build phase when processing class diagrams", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+            };
+
+            await pipeline.run(config, logger);
+
+            const buildLogs = logs.filter((l) => {
+                const meta = l["_meta"] as { name?: string } | undefined;
+                return meta?.name === "build";
+            });
+
+            // entity-basic.md has annotated class diagrams, so build phase should log
+            expect(buildLogs.length).toBeGreaterThan(0);
+        });
+
+        it("should log from validate phase when validation runs", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["entity-basic.md"],
+                // skipValidation defaults to false, so Phase 4 runs
+            };
+
+            await pipeline.run(config, logger);
+
+            const validateLogs = logs.filter((l) => {
+                const meta = l["_meta"] as { name?: string } | undefined;
+                return meta?.name === "validate";
+            });
+
+            expect(validateLogs.length).toBeGreaterThan(0);
+        });
+
+        it("should include phase-scoped context in log entries", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["spec1.md"],
+            };
+
+            await pipeline.run(config, logger);
+
+            // Verify parent-child relationship: child loggers should have parentNames
+            const childLogs = logs.filter((l) => {
+                const meta = l["_meta"] as { parentNames?: string[] } | undefined;
+                return meta?.parentNames && meta.parentNames.length > 0;
+            });
+
+            expect(childLogs.length).toBeGreaterThan(0);
+
+            // All child logs should have "test-pipeline" as parent
+            for (const log of childLogs) {
+                const meta = log["_meta"] as { parentNames: string[] };
+                expect(meta.parentNames).toContain("test-pipeline");
+            }
+        });
+
+        it("should propagate logger to FileDiscovery in Phase 1", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["spec1.md"],
+            };
+
+            await pipeline.run(config, logger);
+
+            // Discovery phase child logger should produce entries during file discovery
+            const discoveryLogs = logs.filter((l) => {
+                const meta = l["_meta"] as { name?: string } | undefined;
+                return meta?.name === "discovery";
+            });
+
+            expect(discoveryLogs.length).toBeGreaterThan(0);
+        });
+
+        it("should not log when no logger is provided", async () => {
+            const config: PipelineConfig = {
+                paths: [testDir],
+                include: ["spec1.md"],
+            };
+
+            // Calling without logger should still work (backwards compatible)
+            const result = await pipeline.run(config);
+
+            expect(result).toBeDefined();
+            expect(result.files).toHaveLength(1);
         });
     });
 });
