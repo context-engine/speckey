@@ -491,6 +491,34 @@ describe("FileDiscovery", () => {
 			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
+		it("should handle file that vanishes between discover and read", async () => {
+			// Phase 1: Discover a real file
+			const tempFile = join(testDir, "vanishing.md");
+			await writeFile(tempFile, "# Will vanish");
+
+			const config = {
+				include: ["vanishing.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const discovered = await discovery.discover(config);
+			expect(discovered.files).toHaveLength(1);
+
+			// Delete the file between discover and read
+			await rm(tempFile);
+
+			// Phase 1b: Read should report ENOENT, not throw
+			const result = await discovery.readFiles(discovered.files);
+
+			expect(result.contents).toHaveLength(0);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.code).toBe("ENOENT");
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
+		});
+
 		it("should preserve file path in result", async () => {
 			const config = {
 				include: ["spec1.md"],

@@ -10,21 +10,6 @@ import {
 } from "./types";
 import { DiscoveryErrors, type UserErrorMessage } from "@speckey/constants";
 
-function toUserMessage(code: string): UserErrorMessage {
-	switch (code) {
-		case "ENOENT":
-			return DiscoveryErrors.PATH_NOT_FOUND;
-		case "EACCES":
-			return DiscoveryErrors.PERMISSION_DENIED;
-		case "INVALID_ENCODING":
-			return DiscoveryErrors.INVALID_ENCODING;
-		case "INVALID_GLOB_SYNTAX":
-			return DiscoveryErrors.INVALID_GLOB_SYNTAX;
-		default:
-			return DiscoveryErrors.UNEXPECTED_ERROR;
-	}
-}
-
 /**
  * High-performance file discovery using Bun APIs.
  */
@@ -82,7 +67,7 @@ export class FileDiscovery {
 				path: config.rootDir,
 				message,
 				code,
-				userMessage: toUserMessage(code),
+				userMessage: this.toUserMessage(code),
 			});
 		}
 
@@ -100,7 +85,7 @@ export class FileDiscovery {
 				path: originalPath,
 				message: `Path does not exist: ${rootDir}`,
 				code: "ENOENT",
-				userMessage: toUserMessage("ENOENT"),
+				userMessage: this.toUserMessage("ENOENT"),
 			};
 		}
 		return null;
@@ -195,7 +180,7 @@ export class FileDiscovery {
 					path: filePath,
 					message: "File does not exist",
 					code: "ENOENT",
-					userMessage: toUserMessage("ENOENT"),
+					userMessage: this.toUserMessage("ENOENT"),
 				});
 				return;
 			}
@@ -211,7 +196,7 @@ export class FileDiscovery {
 				path: filePath,
 				message,
 				code,
-				userMessage: toUserMessage(code),
+				userMessage: this.toUserMessage(code),
 			});
 		}
 	}
@@ -240,7 +225,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "File does not exist",
 						code: "ENOENT",
-						userMessage: toUserMessage("ENOENT"),
+						userMessage: this.toUserMessage("ENOENT"),
 					});
 					continue;
 				}
@@ -267,7 +252,7 @@ export class FileDiscovery {
 						path: filePath,
 						message: "Invalid UTF-8 encoding",
 						code: "INVALID_ENCODING",
-						userMessage: toUserMessage("INVALID_ENCODING"),
+						userMessage: this.toUserMessage("INVALID_ENCODING"),
 					});
 					continue;
 				}
@@ -284,7 +269,7 @@ export class FileDiscovery {
 					path: filePath,
 					message,
 					code,
-					userMessage: toUserMessage(code),
+					userMessage: this.toUserMessage(code),
 				});
 			}
 		}
@@ -298,6 +283,21 @@ export class FileDiscovery {
 	): void {
 		if (result.files.length > limit) {
 			result.exceededFileLimit = true;
+		}
+	}
+
+	private toUserMessage(code: string): UserErrorMessage {
+		switch (code) {
+			case "ENOENT":
+				return DiscoveryErrors.PATH_NOT_FOUND;
+			case "EACCES":
+				return DiscoveryErrors.PERMISSION_DENIED;
+			case "INVALID_ENCODING":
+				return DiscoveryErrors.INVALID_ENCODING;
+			case "INVALID_GLOB_SYNTAX":
+				return DiscoveryErrors.INVALID_GLOB_SYNTAX;
+			default:
+				return DiscoveryErrors.UNEXPECTED_ERROR;
 		}
 	}
 }

@@ -85,52 +85,72 @@ export class ParsePipeline {
         // Phase 1b: Read files
         const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors, discoveryLog);
 
-        // Phase 2: Parse each file (extract mermaid blocks)
-        const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
-
-        // Phase 3a: For each file, extract class diagrams, validate, build entities
-        for (const file of parsedFiles) {
-            this.buildEntities(file, registry, deferredQueue, typeResolver, allClassSpecs, errors, buildLog);
-        }
-
-        // Phase 4: Integration validation
-        let validationReport: IntegrationValidationReport | undefined;
-        if (!config.skipValidation) {
-            const entries = deferredQueue.drain();
-            validationReport = this.integrationValidator.validate(entries, registry, validateLog);
-            for (const err of validationReport.errors) {
-                errors.push({
-                    phase: "integration_validate",
-                    path: "",
-                    message: err.message,
-                    code: err.code,
-                    userMessage: [err.message], // TODO: add proper userMessage to integration validation errors
-                });
-            }
-        }
-
-        // Phase 5: Database write (only if validation passed and writeConfig provided)
-        let writeResult: WriteResult | undefined;
-        const validationPassed = !validationReport || validationReport.errors.length === 0;
-        if (config.writeConfig && validationPassed) {
-            const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
-            writeResult = this.writeToDatabase(definitions, config.writeConfig, errors, writeLog);
-        }
-
-        // Aggregate stats
-        const stats: PipelineStats = {
-            filesDiscovered: discoveredFiles.length,
-            filesRead: fileContents.length,
-            filesParsed: parsedFiles.length,
-            blocksExtracted: parseStats.blocksExtracted,
-            errorsCount: errors.length,
-            entitiesBuilt: allClassSpecs.length,
-            entitiesInserted: writeResult?.inserted ?? 0,
-            entitiesUpdated: writeResult?.updated ?? 0,
-            validationErrors: validationReport?.errors.length ?? 0,
+        // --- PHASE GATE: early return while verifying components incrementally ---
+        // Move this return past each phase as it is verified.
+        return {
+            files: [],
+            errors,
+            stats: {
+                filesDiscovered: discoveredFiles.length,
+                filesRead: fileContents.length,
+                filesParsed: 0,
+                blocksExtracted: 0,
+                errorsCount: errors.length,
+                entitiesBuilt: 0,
+                entitiesInserted: 0,
+                entitiesUpdated: 0,
+                validationErrors: 0,
+            },
+            classSpecs: [],
         };
+        // --- END PHASE GATE ---
 
-        return { files: parsedFiles, errors, stats, classSpecs: allClassSpecs, validationReport, writeResult };
+        // // Phase 2: Parse each file (extract mermaid blocks)
+        // const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
+
+        // // Phase 3a: For each file, extract class diagrams, validate, build entities
+        // for (const file of parsedFiles) {
+        //     this.buildEntities(file, registry, deferredQueue, typeResolver, allClassSpecs, errors, buildLog);
+        // }
+
+        // // Phase 4: Integration validation
+        // let validationReport: IntegrationValidationReport | undefined;
+        // if (!config.skipValidation) {
+        //     const entries = deferredQueue.drain();
+        //     validationReport = this.integrationValidator.validate(entries, registry, validateLog);
+        //     for (const err of validationReport.errors) {
+        //         errors.push({
+        //             phase: "integration_validate",
+        //             path: "",
+        //             message: err.message,
+        //             code: err.code,
+        //             userMessage: [err.message], // TODO: add proper userMessage to integration validation errors
+        //         });
+        //     }
+        // }
+
+        // // Phase 5: Database write (only if validation passed and writeConfig provided)
+        // let writeResult: WriteResult | undefined;
+        // const validationPassed = !validationReport || validationReport.errors.length === 0;
+        // if (config.writeConfig && validationPassed) {
+        //     const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
+        //     writeResult = this.writeToDatabase(definitions, config.writeConfig, errors, writeLog);
+        // }
+
+        // // Aggregate stats
+        // const stats: PipelineStats = {
+        //     filesDiscovered: discoveredFiles.length,
+        //     filesRead: fileContents.length,
+        //     filesParsed: parsedFiles.length,
+        //     blocksExtracted: parseStats.blocksExtracted,
+        //     errorsCount: errors.length,
+        //     entitiesBuilt: allClassSpecs.length,
+        //     entitiesInserted: writeResult?.inserted ?? 0,
+        //     entitiesUpdated: writeResult?.updated ?? 0,
+        //     validationErrors: validationReport?.errors.length ?? 0,
+        // };
+
+        // return { files: parsedFiles, errors, stats, classSpecs: allClassSpecs, validationReport, writeResult };
     }
 
     /**
