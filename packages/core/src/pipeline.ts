@@ -97,9 +97,7 @@ export class ParsePipeline {
         let validationReport: IntegrationValidationReport | undefined;
         if (!config.skipValidation) {
             const entries = deferredQueue.drain();
-            validateLog?.info("Draining deferred queue", { entries: entries.length });
             validationReport = this.integrationValidator.validate(entries, registry);
-            validateLog?.info("Validation complete", { errors: validationReport.errors.length });
             for (const err of validationReport.errors) {
                 errors.push({
                     phase: "integration_validate",
@@ -116,9 +114,7 @@ export class ParsePipeline {
         const validationPassed = !validationReport || validationReport.errors.length === 0;
         if (config.writeConfig && validationPassed) {
             const definitions = allClassSpecs.filter(s => s.specType === ClassSpecType.DEFINITION);
-            writeLog?.info("Writing definitions", { count: definitions.length });
             writeResult = this.writeToDatabase(definitions, config.writeConfig, errors);
-            writeLog?.info("Write complete", { inserted: writeResult.inserted, updated: writeResult.updated });
         }
 
         // Aggregate stats
