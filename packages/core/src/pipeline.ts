@@ -354,7 +354,7 @@ export class ParsePipeline {
 
         for (const file of contents) {
             log?.debug("Parsing file", { file: file.path });
-            const parseResult = this.markdownParser.parse(file.content, file.path);
+            const parseResult = this.markdownParser.parse(file.content, file.path, log);
 
             // Collect parse errors
             const realErrors = parseResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);

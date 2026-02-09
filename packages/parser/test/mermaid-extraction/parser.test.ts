@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { Logger } from "@speckey/logger";
+import type { AppLogObj } from "@speckey/logger";
 import { MarkdownParser } from "../../src/mermaid-extraction/parser";
 import { DiagramType, ErrorSeverity } from "../../src/mermaid-extraction/types";
 
@@ -96,6 +98,34 @@ classDiagram
 		expect(result.errors[0]?.message).toContain("No mermaid diagrams");
 	});
 
+	it("should emit distinct warning when file has no code blocks at all", () => {
+		const markdown = "# Just text\nNo code here.";
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(0);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toBe("No mermaid diagrams found in file");
+	});
+
+	it("should emit distinct warning when file has code blocks but none are mermaid", () => {
+		const markdown = `
+\`\`\`typescript
+const x = 1;
+\`\`\`
+
+\`\`\`javascript
+console.log("hello");
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(0);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toBe("File has code blocks but none are mermaid");
+	});
+
 	it("should handle tables with inline formatting (bold, italic, code)", () => {
 		const markdown = `
 | Name | Type | Description |
@@ -153,6 +183,41 @@ classDiagram
 		expect(result.tables).toHaveLength(1);
 		expect(result.tables[0]?.rows[1]?.cells).toEqual(["", "x", ""]);
 		expect(result.tables[0]?.rows[2]?.cells).toEqual(["y", "", "z"]);
+	});
+
+	it("should emit warning for empty mermaid block", () => {
+		const markdown = `
+# Title
+
+\`\`\`mermaid
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(1);
+		expect(result.blocks[0]?.content).toBe("");
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
+		expect(result.routedBlocks[0]?.isSupported).toBe(false);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toContain("Empty mermaid block");
+	});
+
+	it("should emit warning for whitespace-only mermaid block", () => {
+		const markdown = `
+\`\`\`mermaid
+
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(1);
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toContain("Empty mermaid block");
 	});
 });
 
@@ -388,6 +453,151 @@ pie title Distribution
 
 		expect(result.routedBlocks).toHaveLength(1);
 		expect(result.routedBlocks[0]?.diagramType).toBe(DiagramType.PIE);
+	});
+});
+
+// Logger integration tests (01-scenarios.md: Feature: Logger Integration)
+describe("MarkdownParser Logger Integration", () => {
+	const parser = new MarkdownParser();
+
+	function createTestLogger() {
+		const logs: Record<string, unknown>[] = [];
+		const logger = new Logger<AppLogObj>({
+			name: "test-parser",
+			type: "hidden",
+			minLevel: 0,
+		});
+		logger.attachTransport((logObj: Record<string, unknown>) => {
+			logs.push(logObj);
+		});
+		return { logger, logs };
+	}
+
+	function getMsg(logEntry: Record<string, unknown>): string {
+		return typeof logEntry["0"] === "string" ? (logEntry["0"] as string) : "";
+	}
+
+	function getData(logEntry: Record<string, unknown>): Record<string, unknown> | undefined {
+		return logEntry["1"] as Record<string, unknown> | undefined;
+	}
+
+	it("should work without logger (backwards compatible)", () => {
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.blocks).toHaveLength(1);
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	it("should accept optional logger and still return correct ParseResult", () => {
+		const { logger } = createTestLogger();
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md", logger);
+
+		expect(result.blocks).toHaveLength(1);
+		expect(result.routedBlocks).toHaveLength(1);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	it("should emit debug message for code block extraction", () => {
+		const { logger, logs } = createTestLogger();
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+
+\`\`\`typescript
+const x = 1;
+\`\`\`
+
+\`\`\`mermaid
+erDiagram
+  USER ||--o{ ORDER : places
+\`\`\`
+`;
+		parser.parse(markdown, "test.md", logger);
+
+		const codeBlockLog = logs.find((l) => getMsg(l) === "Extracted code blocks");
+		expect(codeBlockLog).toBeDefined();
+
+		const data = getData(codeBlockLog!);
+		expect(data?.mermaid).toBe(2);
+		expect(data?.total).toBe(3);
+	});
+
+	it("should emit debug message for table extraction", () => {
+		const { logger, logs } = createTestLogger();
+		const markdown = `
+| A | B |
+|---|---|
+| 1 | 2 |
+
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+
+| C | D |
+|---|---|
+| 3 | 4 |
+`;
+		parser.parse(markdown, "test.md", logger);
+
+		const tableLog = logs.find((l) => getMsg(l) === "Extracted tables");
+		expect(tableLog).toBeDefined();
+
+		const data = getData(tableLog!);
+		expect(data?.count).toBe(2);
+	});
+
+	it("should emit warn message when no mermaid blocks found", () => {
+		const { logger, logs } = createTestLogger();
+		const markdown = "# Just text\nNo code here.";
+
+		const result = parser.parse(markdown, "test.md", logger);
+
+		// Logger should receive the warning
+		const warnLog = logs.find((l) => getMsg(l) === "No mermaid diagrams found in file");
+		expect(warnLog).toBeDefined();
+
+		// Structured errors should also contain the warning
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+	});
+
+	it("should emit distinct warn when file has non-mermaid code blocks only", () => {
+		const { logger, logs } = createTestLogger();
+		const markdown = `
+\`\`\`typescript
+const x = 1;
+\`\`\`
+
+\`\`\`javascript
+console.log("hello");
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md", logger);
+
+		// Logger should receive the distinct warning
+		const warnLog = logs.find((l) => getMsg(l) === "File has code blocks but none are mermaid");
+		expect(warnLog).toBeDefined();
+
+		// Structured errors should contain the distinct warning
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+		expect(result.errors[0]?.message).toBe("File has code blocks but none are mermaid");
 	});
 });
 
