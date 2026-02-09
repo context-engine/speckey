@@ -219,6 +219,19 @@ classDiagram
 		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
 		expect(result.errors[0]?.message).toContain("Empty mermaid block");
 	});
+
+	it("should handle parse errors gracefully", () => {
+		// Pass a number to force remark to throw during AST building
+		const result = parser.parse(42 as unknown as string, "bad.md");
+
+		expect(result.blocks).toHaveLength(0);
+		expect(result.routedBlocks).toHaveLength(0);
+		expect(result.tables).toHaveLength(0);
+		expect(result.specFile).toBe("bad.md");
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.ERROR);
+		expect(result.errors[0]?.line).toBe(1);
+	});
 });
 
 // Contract-derived integration tests (02-mermaid-block-extraction.md)
