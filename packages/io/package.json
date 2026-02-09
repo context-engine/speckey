@@ -5,6 +5,7 @@
 	"main": "./src/file-discovery/index.ts",
 	"types": "./src/file-discovery/index.ts",
 	"dependencies": {
-		"@speckey/constants": "workspace:*"
+		"@speckey/constants": "workspace:*",
+		"@speckey/logger": "workspace:*"
 	}
 }

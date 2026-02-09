@@ -1,6 +1,7 @@
 import { accessSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Glob } from "bun";
+import type { Logger, AppLogObj } from "@speckey/logger";
 import {
 	type DiscoveredFiles,
 	type DiscoveryConfig,
@@ -17,7 +18,7 @@ export class FileDiscovery {
 	/**
 	 * Discover files based on the provided configuration.
 	 */
-	public async discover(config: DiscoveryConfig): Promise<DiscoveredFiles> {
+	public async discover(config: DiscoveryConfig, logger?: Logger<AppLogObj>): Promise<DiscoveredFiles> {
 		const result: DiscoveredFiles = {
 			files: [],
 			skipped: [],
@@ -54,9 +55,14 @@ export class FileDiscovery {
 				});
 			}
 
-			// 4. Limit check (Warning logic is expected at CLI level, but we can cap it or mark as error if strict)
-			// According to specs, validateFileLimit is a private method.
+			// 4. Limit check
 			this.validateFileLimit(result, config.maxFiles);
+
+			logger?.info("Discovery complete", {
+				filesFound: result.files.length,
+				skipped: result.skipped.length,
+				errors: result.errors.length,
+			});
 		} catch (error: unknown) {
 			const message =
 				error instanceof Error
@@ -208,6 +214,7 @@ export class FileDiscovery {
 	public async readFiles(
 		files: string[],
 		maxFileSizeMb: number = 10,
+		logger?: Logger<AppLogObj>,
 	): Promise<FileContents> {
 		const result: FileContents = {
 			contents: [],
@@ -273,6 +280,12 @@ export class FileDiscovery {
 				});
 			}
 		}
+
+		logger?.info("Read complete", {
+			filesRead: result.contents.length,
+			skipped: result.skipped.length,
+			errors: result.errors.length,
+		});
 
 		return result;
 	}

@@ -4,6 +4,21 @@ import { join, resolve } from "node:path";
 import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
 import { DiscoveryErrors } from "@speckey/constants";
+import { Logger } from "@speckey/logger";
+import type { AppLogObj } from "@speckey/logger";
+
+function createTestLogger() {
+	const logs: Record<string, unknown>[] = [];
+	const logger = new Logger<AppLogObj>({
+		name: "test-discovery",
+		type: "hidden",
+		minLevel: 0,
+	});
+	logger.attachTransport((logObj: Record<string, unknown>) => {
+		logs.push(logObj);
+	});
+	return { logger, logs };
+}
 
 describe("FileDiscovery", () => {
 	const testDir = resolve("./test-temp-discovery");
@@ -38,6 +53,12 @@ describe("FileDiscovery", () => {
 		// Files in excluded directories
 		await writeFile(join(testDir, "node_modules/package.md"), "package");
 		await writeFile(join(testDir, ".git/config.md"), "config");
+
+		// File with invalid UTF-8 encoding (0xff 0xfe are invalid UTF-8 lead bytes)
+		await writeFile(join(testDir, "invalid-encoding.md"), Buffer.from([0x23, 0x20, 0xff, 0xfe, 0x0a]));
+
+		// File with invalid UTF-8 encoding (contains replacement character after Bun reads it)
+		await writeFile(join(testDir, "invalid-encoding.md"), Buffer.from([0x23, 0x20, 0xff, 0xfe, 0x0a]));
 	});
 
 	afterAll(async () => {
@@ -149,6 +170,25 @@ describe("FileDiscovery", () => {
 			const result = await discovery.discover(config);
 
 			expect(result.files).toHaveLength(0);
+		});
+
+		it("should handle invalid glob pattern gracefully", async () => {
+			// Bun's Glob constructor is permissive — does not throw on malformed
+			// patterns like "[invalid". The INVALID_GLOB_SYNTAX catch in
+			// applyGlobPatterns() is a defensive guard. With current Bun, "[invalid"
+			// matches nothing, resulting in EMPTY_DIRECTORY.
+			const config = {
+				include: ["[invalid"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const result = await discovery.discover(config);
+
+			expect(result.files).toHaveLength(0);
+			expect(result.errors.length).toBeGreaterThanOrEqual(1);
 		});
 
 		it("should handle multiple glob patterns", async () => {
@@ -306,6 +346,37 @@ describe("FileDiscovery", () => {
 					(s) => s.path.endsWith("large.md") && s.reason === SkipReason.TOO_LARGE,
 				),
 			).toBe(true);
+		});
+
+		it("should set exceededFileLimit when file count exceeds maxFiles", async () => {
+			const config = {
+				include: ["**/*.md"],
+				exclude: ["**/node_modules/**", "**/.git/**"],
+				maxFiles: 1,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const result = await discovery.discover(config);
+
+			// testDir has 4+ .md files, maxFiles is 1
+			expect(result.files.length).toBeGreaterThan(1);
+			expect(result.exceededFileLimit).toBe(true);
+		});
+
+		it("should not set exceededFileLimit when within limit", async () => {
+			const config = {
+				include: ["spec1.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const result = await discovery.discover(config);
+
+			expect(result.files).toHaveLength(1);
+			expect(result.exceededFileLimit).toBe(false);
 		});
 
 		it("should include files under max size limit during file reading (Phase 1b)", async () => {
@@ -519,6 +590,48 @@ describe("FileDiscovery", () => {
 			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
+		it("should handle permission denied error", async () => {
+			const restrictedFile = join(testDir, "restricted.md");
+			await writeFile(restrictedFile, "# Restricted");
+			await chmod(restrictedFile, 0o000);
+
+			try {
+				const readableFile = join(testDir, "spec1.md");
+				const result = await discovery.readFiles([restrictedFile, readableFile]);
+
+				// Restricted file should produce an error
+				const restrictedError = result.errors.find((e) => e.path === restrictedFile);
+				expect(restrictedError).toBeDefined();
+				expect(restrictedError?.userMessage).toBe(DiscoveryErrors.PERMISSION_DENIED);
+
+				// Readable file should still succeed
+				expect(result.contents.some((c) => c.path.endsWith("spec1.md"))).toBe(true);
+			} finally {
+				// Restore permissions for cleanup
+				await chmod(restrictedFile, 0o644);
+				await rm(restrictedFile);
+			}
+		});
+
+		it("should handle file encoding error (invalid UTF-8)", async () => {
+			const invalidFile = join(testDir, "invalid-encoding.md");
+			const readableFile = join(testDir, "spec1.md");
+
+			const result = await discovery.readFiles([invalidFile, readableFile]);
+
+			// Invalid encoding file should produce an error
+			const encodingError = result.errors.find((e) => e.path === invalidFile);
+			expect(encodingError).toBeDefined();
+			expect(encodingError?.code).toBe("INVALID_ENCODING");
+			expect(encodingError?.userMessage).toBe(DiscoveryErrors.INVALID_ENCODING);
+
+			// File should NOT appear in contents
+			expect(result.contents.some((c) => c.path === invalidFile)).toBe(false);
+
+			// Readable file should still succeed
+			expect(result.contents.some((c) => c.path.endsWith("spec1.md"))).toBe(true);
+		});
+
 		it("should preserve file path in result", async () => {
 			const config = {
 				include: ["spec1.md"],
@@ -532,6 +645,91 @@ describe("FileDiscovery", () => {
 			const result = await discovery.readFiles(discovered.files);
 
 			expect(result.contents[0]?.path).toBe(discovered.files[0]);
+		});
+	});
+
+	// ============================================================
+	// Feature: Logger Injection (4 scenarios)
+	// ============================================================
+
+	describe("Logger Injection", () => {
+		it("should log discovery progress when logger is provided", async () => {
+			const { logger, logs } = createTestLogger();
+			const config = {
+				include: ["**/spec*.md"],
+				exclude: ["**/node_modules/**", "**/.git/**"],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const result = await discovery.discover(config, logger);
+
+			expect(result.files.length).toBeGreaterThanOrEqual(3);
+			expect(logs.length).toBeGreaterThan(0);
+
+			// Should have a "Discovery complete" log entry with file count
+			const discoveryLog = logs.find(
+				(l) => typeof l["0"] === "string" && (l["0"] as string).includes("Discovery complete"),
+			);
+			expect(discoveryLog).toBeDefined();
+		});
+
+		it("should operate silently when no logger is provided to discover()", async () => {
+			const config = {
+				include: ["**/spec*.md"],
+				exclude: ["**/node_modules/**", "**/.git/**"],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			// Should not throw when logger is omitted
+			const result = await discovery.discover(config);
+
+			expect(result.files.length).toBeGreaterThanOrEqual(3);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		it("should log read progress when logger is provided", async () => {
+			const { logger, logs } = createTestLogger();
+			const config = {
+				include: ["spec1.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const discovered = await discovery.discover(config);
+			const result = await discovery.readFiles(discovered.files, 10, logger);
+
+			expect(result.contents).toHaveLength(1);
+			expect(logs.length).toBeGreaterThan(0);
+
+			// Should have a "Read complete" log entry with files read count
+			const readLog = logs.find(
+				(l) => typeof l["0"] === "string" && (l["0"] as string).includes("Read complete"),
+			);
+			expect(readLog).toBeDefined();
+		});
+
+		it("should operate silently when no logger is provided to readFiles()", async () => {
+			const config = {
+				include: ["spec1.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const discovered = await discovery.discover(config);
+
+			// Should not throw when logger is omitted
+			const result = await discovery.readFiles(discovered.files, 10);
+
+			expect(result.contents).toHaveLength(1);
+			expect(result.errors).toHaveLength(0);
 		});
 	});
 });
