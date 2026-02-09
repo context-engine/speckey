@@ -377,7 +377,25 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             return { logger, logs };
         }
 
-        it("should create discovery child logger and produce log entries", async () => {
+        /** Helper: extract message string from log entry (tslog stores it at index "0") */
+        function getMsg(logEntry: Record<string, unknown>): string {
+            return typeof logEntry["0"] === "string" ? (logEntry["0"] as string) : "";
+        }
+
+        /** Helper: extract data payload from log entry (tslog stores it at index "1") */
+        function getData(logEntry: Record<string, unknown>): Record<string, unknown> | undefined {
+            return logEntry["1"] as Record<string, unknown> | undefined;
+        }
+
+        /** Helper: filter logs that have _meta.name containing "discovery" */
+        function discoveryScoped(logs: Record<string, unknown>[]): Record<string, unknown>[] {
+            return logs.filter((l) => {
+                const meta = l["_meta"] as { name?: string } | undefined;
+                return meta?.name?.includes("discovery");
+            });
+        }
+
+        it("should create discovery child logger and forward to FD methods", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-a")],
@@ -385,15 +403,93 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             await pipeline.run(config, logger);
 
-            const discoveryLogs = logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name === "discovery";
-            });
+            const scoped = discoveryScoped(logs);
+            expect(scoped.length).toBeGreaterThan(0);
 
-            expect(discoveryLogs.length).toBeGreaterThan(0);
+            // FD-originated logs prove the logger was forwarded to discover() and readFiles()
+            const fdDiscoveryComplete = scoped.find(
+                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped !== undefined,
+            );
+            const fdReadComplete = scoped.find(
+                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped !== undefined,
+            );
+            expect(fdDiscoveryComplete).toBeDefined();
+            expect(fdReadComplete).toBeDefined();
         });
 
-        it("should run without logger (no crash)", async () => {
+        it("should emit pipeline-level boundary logs", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "dir-a")],
+            };
+
+            await pipeline.run(config, logger);
+
+            const scoped = discoveryScoped(logs);
+
+            // Pipeline boundary messages (no "skipped" in payload — distinguishes from FD)
+            const discoveringFiles = scoped.find((l) => getMsg(l) === "Discovering files");
+            const pipelineDiscoveryComplete = scoped.find(
+                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped === undefined,
+            );
+            const readingFiles = scoped.find((l) => getMsg(l) === "Reading files");
+            const pipelineReadComplete = scoped.find(
+                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped === undefined,
+            );
+
+            expect(discoveringFiles).toBeDefined();
+            expect(pipelineDiscoveryComplete).toBeDefined();
+            expect(readingFiles).toBeDefined();
+            expect(pipelineReadComplete).toBeDefined();
+        });
+
+        it("should emit FD-originated logs with detailed payloads", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "dir-a")],
+            };
+
+            await pipeline.run(config, logger);
+
+            const scoped = discoveryScoped(logs);
+
+            // FD "Discovery complete" includes filesFound, skipped, errors
+            const fdDiscovery = scoped.find(
+                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped !== undefined,
+            );
+            expect(fdDiscovery).toBeDefined();
+            const fdDiscoveryData = getData(fdDiscovery!);
+            expect(fdDiscoveryData).toHaveProperty("filesFound");
+            expect(fdDiscoveryData).toHaveProperty("skipped");
+            expect(fdDiscoveryData).toHaveProperty("errors");
+
+            // FD "Read complete" includes filesRead, skipped, errors
+            const fdRead = scoped.find(
+                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped !== undefined,
+            );
+            expect(fdRead).toBeDefined();
+            const fdReadData = getData(fdRead!);
+            expect(fdReadData).toHaveProperty("filesRead");
+            expect(fdReadData).toHaveProperty("skipped");
+            expect(fdReadData).toHaveProperty("errors");
+        });
+
+        it("should emit discovery error logs for invalid paths", async () => {
+            const { logger, logs } = createTestLogger();
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "nonexistent")],
+            };
+
+            await pipeline.run(config, logger);
+
+            const scoped = discoveryScoped(logs);
+
+            // Pipeline-level "Discovery error" at warn level
+            const errorLog = scoped.find((l) => getMsg(l) === "Discovery error");
+            expect(errorLog).toBeDefined();
+        });
+
+        it("should run without logger (no crash, FD receives undefined)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-a")],
             };
@@ -402,6 +498,8 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             expect(result).toBeDefined();
             expect(result.stats.filesDiscovered).toBe(2);
+            expect(result.stats.filesRead).toBe(2);
+            expect(result.errors).toHaveLength(0);
         });
     });
 

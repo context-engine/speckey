@@ -292,7 +292,7 @@ export class ParsePipeline {
                 exclude: config.exclude,
                 maxFiles: config.maxFiles,
                 maxFileSizeMb: config.maxFileSizeMb,
-            });
+            }, log);
 
             // Collect discovery errors
             for (const err of result.errors) {
@@ -323,7 +323,7 @@ export class ParsePipeline {
         log?: Logger<AppLogObj>,
     ): Promise<{ path: string; content: string }[]> {
         log?.debug("Reading files", { count: files.length });
-        const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb);
+        const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb, log);
 
         // Collect read errors
         for (const err of result.errors) {
