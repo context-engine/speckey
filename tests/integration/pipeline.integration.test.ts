@@ -73,17 +73,8 @@ describe("Pipeline Integration", () => {
     // ============================================================
 
     describe("Error Propagation", () => {
-        it("should handle discovery error for non-existent path", async () => {
-            const config: PipelineConfig = {
-                paths: [resolve(FIXTURES_DIR, "non-existent")],
-            };
-
-            const result = await pipeline.run(config);
-
-            // Should have no files
-            expect(result.files).toHaveLength(0);
-            expect(result.stats.filesDiscovered).toBe(0);
-        });
+        // "should handle discovery error for non-existent path" moved to pipeline-discovery.integration.test.ts
+        // (covered by Error Mapping > PATH_NOT_FOUND with fuller assertions)
 
         it("should continue processing after discovery error", async () => {
             const config: PipelineConfig = {
@@ -124,14 +115,7 @@ describe("Pipeline Integration", () => {
             expect(result.stats.blocksExtracted).toBe(sumBlocks);
         });
 
-        it("should report accurate error counts", async () => {
-            const config: PipelineConfig = {
-                paths: [resolve(FIXTURES_DIR, "simple-spec")],
-            };
-
-            const result = await pipeline.run(config);
-
-            expect(result.stats.errorsCount).toBe(result.errors.length);
-        });
+        // "should report accurate error counts" moved to pipeline-discovery.integration.test.ts
+        // (covered by Stats Accuracy > errorsCount invariant across 4 configs)
     });
 });

@@ -857,35 +857,7 @@ class SimpleService {
             }
         });
 
-        it("should propagate logger to FileDiscovery in Phase 1", async () => {
-            const { logger, logs } = createTestLogger();
-            const config: PipelineConfig = {
-                paths: [testDir],
-                include: ["spec1.md"],
-            };
-
-            await pipeline.run(config, logger);
-
-            // Discovery phase child logger should produce entries during file discovery
-            const discoveryLogs = logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name === "discovery";
-            });
-
-            expect(discoveryLogs.length).toBeGreaterThan(0);
-        });
-
-        it("should not log when no logger is provided", async () => {
-            const config: PipelineConfig = {
-                paths: [testDir],
-                include: ["spec1.md"],
-            };
-
-            // Calling without logger should still work (backwards compatible)
-            const result = await pipeline.run(config);
-
-            expect(result).toBeDefined();
-            expect(result.files).toHaveLength(1);
-        });
+        // "should propagate logger to FileDiscovery in Phase 1" moved to pipeline-discovery.integration.test.ts
+        // "should not log when no logger is provided" moved to pipeline-discovery.integration.test.ts
     });
 });

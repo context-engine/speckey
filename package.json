@@ -1,6 +1,10 @@
 {
 	"name": "speckey",
 	"version": "0.1.0",
+	"dependencies": {
+		"@speckey/logger": "workspace:*",
+		"@speckey/constants": "workspace:*"
+	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.12",
 		"@stryker-mutator/core": "^9.4.0",

@@ -4,6 +4,10 @@
   "workspaces": {
     "": {
       "name": "speckey",
+      "dependencies": {
+        "@speckey/constants": "workspace:*",
+        "@speckey/logger": "workspace:*",
+      },
       "devDependencies": {
         "@biomejs/biome": "^2.3.12",
         "@stryker-mutator/core": "^9.4.0",
