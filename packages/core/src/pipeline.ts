@@ -85,16 +85,19 @@ export class ParsePipeline {
         // Phase 1b: Read files
         const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors, discoveryLog);
 
+        // Phase 2: Parse each file (extract mermaid blocks)
+        const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
+
         // --- PHASE GATE: early return while verifying components incrementally ---
         // Move this return past each phase as it is verified.
         return {
-            files: [],
+            files: parsedFiles,
             errors,
             stats: {
                 filesDiscovered: discoveredFiles.length,
                 filesRead: fileContents.length,
-                filesParsed: 0,
-                blocksExtracted: 0,
+                filesParsed: parsedFiles.length,
+                blocksExtracted: parseStats.blocksExtracted,
                 errorsCount: errors.length,
                 entitiesBuilt: 0,
                 entitiesInserted: 0,
@@ -104,9 +107,6 @@ export class ParsePipeline {
             classSpecs: [],
         };
         // --- END PHASE GATE ---
-
-        // // Phase 2: Parse each file (extract mermaid blocks)
-        // const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
 
         // // Phase 3a: For each file, extract class diagrams, validate, build entities
         // for (const file of parsedFiles) {

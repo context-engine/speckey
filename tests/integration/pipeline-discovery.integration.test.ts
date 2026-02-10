@@ -322,9 +322,9 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(result.stats.filesDiscovered).toBe(3);
             expect(result.stats.filesRead).toBe(3);
             expect(result.stats.errorsCount).toBe(0);
-            // Phase-gated: downstream stats are zero
-            expect(result.stats.filesParsed).toBe(0);
-            expect(result.stats.blocksExtracted).toBe(0);
+            // Phase 2 active: files parsed = files read (no parse errors in plain .md)
+            expect(result.stats.filesParsed).toBe(3);
+            expect(result.stats.blocksExtracted).toBe(0); // no mermaid blocks in temp fixtures
             expect(result.stats.entitiesBuilt).toBe(0);
             expect(result.stats.entitiesInserted).toBe(0);
             expect(result.stats.entitiesUpdated).toBe(0);
@@ -508,24 +508,29 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
     // ============================================================
 
     describe("PipelineResult Shape — Phase-Gated", () => {
-        it("should return phase-gated result shape with only discovery active", async () => {
+        it("should return phase-gated result shape with discovery + parse active", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-b")],
             };
 
             const result = await pipeline.run(config);
 
-            // files array empty (Phase 2 not reached)
-            expect(result.files).toEqual([]);
+            // Phase 2 active: files array has entries (plain .md files parsed with no blocks)
+            expect(result.files).toHaveLength(3);
+            for (const f of result.files) {
+                expect(f.path).toBeDefined();
+                expect(f.blocks).toEqual([]);   // no mermaid blocks in temp fixtures
+                expect(f.tables).toEqual([]);   // no tables in temp fixtures
+            }
             // classSpecs empty (Phase 3a not reached)
             expect(result.classSpecs).toEqual([]);
             // No validation report (Phase 4 not reached)
             expect(result.validationReport).toBeUndefined();
             // No write result (Phase 5 not reached)
             expect(result.writeResult).toBeUndefined();
-            // Only discovery/read phase errors possible
+            // Only discovery/read/parse phase errors possible
             for (const err of result.errors) {
-                expect(["discovery", "read"]).toContain(err.phase);
+                expect(["discovery", "read", "parse"]).toContain(err.phase);
             }
             // Discovery/read stats are accurate
             expect(result.stats.filesDiscovered).toBe(3);
@@ -609,15 +614,14 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 });
 
 /**
- * Assert the phase-gated result shape invariants.
+ * Assert the phase-gated result shape invariants (Phases 1+1b+2 active).
  */
 function assertPhaseGatedShape(result: PipelineResult): void {
-    expect(result.files).toEqual([]);
+    // Phase 2 active: files may have entries, filesParsed may be > 0
     expect(result.classSpecs).toEqual([]);
     expect(result.validationReport).toBeUndefined();
     expect(result.writeResult).toBeUndefined();
-    expect(result.stats.filesParsed).toBe(0);
-    expect(result.stats.blocksExtracted).toBe(0);
+    expect(result.stats.filesParsed).toBe(result.files.length);
     expect(result.stats.entitiesBuilt).toBe(0);
     expect(result.stats.entitiesInserted).toBe(0);
     expect(result.stats.entitiesUpdated).toBe(0);
