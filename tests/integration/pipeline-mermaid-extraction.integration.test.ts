@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig, PipelineResult } from "../../packages/core/src/types";
-import { DiagramType } from "../../packages/parser/src/mermaid-extraction/types";
+import { DiagramType } from "../../packages/parser/src/mermaid-validation/types";
 
 /**
  * Pipeline ↔ MermaidExtraction Integration Tests
@@ -300,7 +300,7 @@ flowchart TD
     // ============================================================
 
     describe("Diagram Type Routing", () => {
-        it("should detect classDiagram and set isSupported=true", async () => {
+        it("should detect classDiagram type", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
             };
@@ -310,8 +310,7 @@ flowchart TD
             expect(result.files[0]!.blocks).toHaveLength(1);
             const block = result.files[0]!.blocks[0]!;
             expect(block.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
-            expect(block.isSupported).toBe(true);
-            expect(block.block.language).toBe("mermaid");
+            expect(block.content).toContain("classDiagram");
         });
 
         it("should detect multiple diagram types in one file", async () => {
@@ -356,20 +355,17 @@ flowchart TD
 
             expect(result.files[0]!.blocks).toHaveLength(1);
             expect(result.files[0]!.blocks[0]!.diagramType).toBe(DiagramType.FLOWCHART);
-            expect(result.files[0]!.blocks[0]!.isSupported).toBe(true);
         });
 
-        it("should route empty mermaid block as UNKNOWN with isSupported=false", async () => {
+        it("should exclude empty mermaid blocks from validated results", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "empty-mermaid-block")],
             };
 
             const result = await pipeline.run(config);
 
-            expect(result.files[0]!.blocks).toHaveLength(1);
-            const block = result.files[0]!.blocks[0]!;
-            expect(block.diagramType).toBe(DiagramType.UNKNOWN);
-            expect(block.isSupported).toBe(false);
+            // Empty blocks are rejected by MermaidValidator (WARNING), not included in validatedBlocks
+            expect(result.files[0]!.blocks).toHaveLength(0);
         });
     });
 
@@ -431,7 +427,7 @@ flowchart TD
 
             const result = await pipeline.run(config);
 
-            const block = result.files[0]!.blocks[0]!.block;
+            const block = result.files[0]!.blocks[0]!;
             expect(block.startLine).toBeGreaterThan(0);
             expect(block.endLine).toBeGreaterThan(block.startLine);
         });
@@ -461,7 +457,7 @@ flowchart TD
 
             // Each block's end line should be before next block's start line
             for (let i = 0; i < blocks.length - 1; i++) {
-                expect(blocks[i]!.block.endLine).toBeLessThan(blocks[i + 1]!.block.startLine);
+                expect(blocks[i]!.endLine).toBeLessThan(blocks[i + 1]!.startLine);
             }
         });
     });
@@ -551,15 +547,15 @@ flowchart TD
             expect(result.stats.blocksExtracted).toBe(0);
         });
 
-        it("should count empty/unknown blocks in blocksExtracted", async () => {
+        it("should not count empty/rejected blocks in blocksExtracted", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "empty-mermaid-block")],
             };
 
             const result = await pipeline.run(config);
 
-            // Empty blocks ARE routed (as UNKNOWN) and counted in blocksExtracted
-            expect(result.stats.blocksExtracted).toBe(1);
+            // Empty blocks are rejected by MermaidValidator, not counted in blocksExtracted
+            expect(result.stats.blocksExtracted).toBe(0);
         });
 
         it("should maintain errorsCount invariant with parse results", async () => {
@@ -667,7 +663,7 @@ flowchart TD
         it("should emit parser-originated logs with extraction details", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "single-class")],
+                paths: [join(TEMP_DIR, "with-tables")],
             };
 
             await pipeline.run(config, logger);
@@ -680,11 +676,10 @@ flowchart TD
             );
             expect(extractedBlocks).toBeDefined();
             const blocksData = getData(extractedBlocks!);
-            expect(blocksData).toHaveProperty("mermaid");
-            expect(blocksData).toHaveProperty("total");
+            expect(blocksData).toHaveProperty("count");
             expect(blocksData).toHaveProperty("file");
 
-            // MarkdownParser "Extracted tables"
+            // MarkdownParser "Extracted tables" (only emitted when tables present)
             const extractedTables = scoped.find(
                 (l) => getMsg(l) === "Extracted tables",
             );
@@ -794,17 +789,15 @@ flowchart TD
             assertPhaseGatedShape(result);
         });
 
-        it("should preserve empty mermaid block in routedBlocks", async () => {
+        it("should exclude empty mermaid blocks from validated results", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "empty-mermaid-block")],
             };
 
             const result = await pipeline.run(config);
 
-            expect(result.files[0]!.blocks).toHaveLength(1);
-            const block = result.files[0]!.blocks[0]!;
-            expect(block.diagramType).toBe(DiagramType.UNKNOWN);
-            expect(block.block.content.trim()).toBe("");
+            // Empty blocks are rejected by MermaidValidator, not included in validatedBlocks
+            expect(result.files[0]!.blocks).toHaveLength(0);
         });
     });
 

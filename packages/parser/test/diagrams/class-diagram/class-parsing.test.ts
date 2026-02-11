@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import type { CodeBlock } from "../../../src/mermaid-extraction/types";
+import type { CodeBlock } from "../../../src/markdown-extraction/types";
 import { ClassExtractor } from "../../../src/diagrams/class-diagram/class-parsing";
 
 describe("ClassExtractor", () => {

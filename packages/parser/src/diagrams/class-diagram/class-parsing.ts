@@ -5,7 +5,7 @@ import type {
     ClassRelation,
     Namespace
 } from "mermaid-ast";
-import type { CodeBlock } from "../../mermaid-extraction/types";
+import type { CodeBlock } from "../../markdown-extraction/types";
 
 import type {
     ParsedClass,

@@ -1,5 +1,5 @@
 import type { Logger, AppLogObj } from "@speckey/logger";
-import type { RoutedBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
+import type { ValidatedMermaidBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
 import type { UserErrorMessage } from "@speckey/constants";
 import type { ClassSpec } from "./package-registry/types";
 import type { WriteConfig, WriteResult } from "@speckey/database";
@@ -63,7 +63,7 @@ export interface ParsedFile {
     /**
      * Extracted mermaid blocks with routing info.
      */
-    blocks: RoutedBlock[];
+    blocks: ValidatedMermaidBlock[];
     /**
      * Extracted markdown tables.
      */

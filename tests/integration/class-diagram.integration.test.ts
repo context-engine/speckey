@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
-import { MarkdownParser } from "../../packages/parser/src/mermaid-extraction/parser";
+import { MarkdownParser } from "../../packages/parser/src/markdown-extraction/parser";
 import { ClassExtractor } from "../../packages/parser/src/diagrams/class-diagram/class-parsing";
 
 import { readFileSync } from "node:fs";
@@ -15,9 +15,10 @@ describe("Class Diagram Parser Integration", () => {
     const parseFixture = (filename: string) => {
         const path = resolve(FIXTURES_DIR, filename);
         const content = readFileSync(path, "utf-8");
-        const parseResult = mdParser.parse(content, path);
-        const classDiagramBlocks = parseResult.blocks.filter(
-            (b) => b.language === "mermaid" && b.content.trim().startsWith("classDiagram")
+        const extractionResult = mdParser.parse(content, path);
+        const mermaidBlocks = extractionResult.codeBlocks["mermaid"] ?? [];
+        const classDiagramBlocks = mermaidBlocks.filter(
+            (b) => b.content.trim().startsWith("classDiagram")
         );
         return classDiagramBlocks.map((block) => classExtractor.extract(block));
     };
@@ -318,8 +319,8 @@ describe("Class Diagram Parser Integration", () => {
         it("should track class line numbers accurately", () => {
             const path = resolve(FIXTURES_DIR, "simple-class.md");
             const content = readFileSync(path, "utf-8");
-            const parseResult = mdParser.parse(content, path);
-            const block = parseResult.blocks[0]!;
+            const extractionResult = mdParser.parse(content, path);
+            const block = (extractionResult.codeBlocks["mermaid"] ?? [])[0]!;
 
             const result = classExtractor.extract(block);
 
@@ -331,9 +332,10 @@ describe("Class Diagram Parser Integration", () => {
         it("should track separate line numbers for multiple diagrams", () => {
             const path = resolve(FIXTURES_DIR, "multiple-diagrams.md");
             const content = readFileSync(path, "utf-8");
-            const parseResult = mdParser.parse(content, path);
-            const classDiagramBlocks = parseResult.blocks.filter(
-                (b) => b.language === "mermaid" && b.content.trim().startsWith("classDiagram")
+            const extractionResult = mdParser.parse(content, path);
+            const mermaidBlocks = extractionResult.codeBlocks["mermaid"] ?? [];
+            const classDiagramBlocks = mermaidBlocks.filter(
+                (b) => b.content.trim().startsWith("classDiagram")
             );
 
             expect(classDiagramBlocks.length).toBe(3);

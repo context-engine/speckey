@@ -1,21 +1,11 @@
 import { FileDiscovery } from "@speckey/io";
 import {
     MarkdownParser,
-    ClassExtractor,
-    ClassDiagramValidator,
-    EntityBuilder,
-    TypeResolver,
-    IntegrationValidator,
-    DiagramType,
+    MermaidValidator,
+    ValidationDiagramRouter,
     ErrorSeverity,
 } from "@speckey/parser";
-import type { IntegrationValidationReport } from "@speckey/parser";
-import { DgraphWriter } from "@speckey/database";
-import type { WriteResult, WriteConfig } from "@speckey/database";
-import { ClassSpecType } from "./package-registry/types";
-import type { ClassSpec } from "./package-registry/types";
-import { PackageRegistry } from "./package-registry";
-import { DeferredValidationQueue } from "./deferred-validation-queue";
+import type { ExtractionResult, RoutedDiagrams, ValidatedMermaidBlock } from "@speckey/parser";
 import type { Logger, AppLogObj } from "@speckey/logger";
 import {
     DEFAULT_CONFIG,
@@ -23,8 +13,25 @@ import {
     type PipelineConfig,
     type PipelineError,
     type PipelineResult,
-    type PipelineStats,
 } from "./types";
+
+// --- Phase 3a+ imports (gated) ---
+// import {
+//     ClassExtractor,
+//     ClassDiagramValidator,
+//     EntityBuilder,
+//     TypeResolver,
+//     IntegrationValidator,
+//     DiagramType,
+// } from "@speckey/parser";
+// import type { IntegrationValidationReport } from "@speckey/parser";
+// import { DgraphWriter } from "@speckey/database";
+// import type { WriteResult, WriteConfig } from "@speckey/database";
+// import { ClassSpecType } from "./package-registry/types";
+// import type { ClassSpec } from "./package-registry/types";
+// import { PackageRegistry } from "./package-registry";
+// import { DeferredValidationQueue } from "./deferred-validation-queue";
+// import type { PipelineStats } from "./types";
 
 /**
  * Main orchestrator that runs the full parse pipeline:
@@ -34,16 +41,22 @@ import {
 export class ParsePipeline {
     private fileDiscovery: FileDiscovery;
     private markdownParser: MarkdownParser;
-    private classExtractor: ClassExtractor;
-    private classDiagramValidator: ClassDiagramValidator;
-    private integrationValidator: IntegrationValidator;
+    private mermaidValidator: MermaidValidator;
+    private diagramRouter: ValidationDiagramRouter;
+    // --- Phase 3a+ fields (gated) ---
+    // private classExtractor: ClassExtractor;
+    // private classDiagramValidator: ClassDiagramValidator;
+    // private integrationValidator: IntegrationValidator;
 
     constructor() {
         this.fileDiscovery = new FileDiscovery();
         this.markdownParser = new MarkdownParser();
-        this.classExtractor = new ClassExtractor();
-        this.classDiagramValidator = new ClassDiagramValidator();
-        this.integrationValidator = new IntegrationValidator();
+        this.mermaidValidator = new MermaidValidator();
+        this.diagramRouter = new ValidationDiagramRouter();
+        // --- Phase 3a+ (gated) ---
+        // this.classExtractor = new ClassExtractor();
+        // this.classDiagramValidator = new ClassDiagramValidator();
+        // this.integrationValidator = new IntegrationValidator();
     }
 
     /**
@@ -51,20 +64,19 @@ export class ParsePipeline {
      */
     async run(config: PipelineConfig, logger?: Logger<AppLogObj>): Promise<PipelineResult> {
         const errors: PipelineError[] = [];
-        const parsedFiles: ParsedFile[] = [];
-        const allClassSpecs: ClassSpec[] = [];
 
         // Create phase-scoped child loggers
         const discoveryLog = logger?.getSubLogger({ name: "discovery" });
         const parseLog = logger?.getSubLogger({ name: "parse" });
-        const buildLog = logger?.getSubLogger({ name: "build" });
-        const validateLog = logger?.getSubLogger({ name: "validate" });
-        const writeLog = logger?.getSubLogger({ name: "write" });
 
-        // Shared instances for entity building (one per run)
-        const registry = new PackageRegistry();
-        const deferredQueue = new DeferredValidationQueue();
-        const typeResolver = new TypeResolver();
+        // --- Phase 3a+ run variables (gated) ---
+        // const allClassSpecs: ClassSpec[] = [];
+        // const buildLog = logger?.getSubLogger({ name: "build" });
+        // const validateLog = logger?.getSubLogger({ name: "validate" });
+        // const writeLog = logger?.getSubLogger({ name: "write" });
+        // const registry = new PackageRegistry();
+        // const deferredQueue = new DeferredValidationQueue();
+        // const typeResolver = new TypeResolver();
 
         // Apply defaults
         const resolvedConfig = {
@@ -85,8 +97,11 @@ export class ParsePipeline {
         // Phase 1b: Read files
         const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, errors, discoveryLog);
 
-        // Phase 2: Parse each file (extract mermaid blocks)
-        const parseStats = this.parse(fileContents, parsedFiles, errors, parseLog);
+        // Phase 2a: Extract markdown structure (code blocks + tables)
+        const extractedFiles = this.extractMarkdown(fileContents, errors, parseLog);
+
+        // Phase 2b: Validate mermaid blocks, build ParsedFiles, route by diagram type
+        const { parsedFiles, routedDiagrams, blocksExtracted } = await this.validateMermaid(extractedFiles, errors, parseLog);
 
         // --- PHASE GATE: early return while verifying components incrementally ---
         // Move this return past each phase as it is verified.
@@ -97,7 +112,7 @@ export class ParsePipeline {
                 filesDiscovered: discoveredFiles.length,
                 filesRead: fileContents.length,
                 filesParsed: parsedFiles.length,
-                blocksExtracted: parseStats.blocksExtracted,
+                blocksExtracted,
                 errorsCount: errors.length,
                 entitiesBuilt: 0,
                 entitiesInserted: 0,
@@ -153,120 +168,8 @@ export class ParsePipeline {
         // return { files: parsedFiles, errors, stats, classSpecs: allClassSpecs, validationReport, writeResult };
     }
 
-    /**
-     * Phase 3a: Extract class diagrams, unit-validate, and build entities for a single file.
-     */
-    private buildEntities(
-        file: ParsedFile,
-        registry: PackageRegistry,
-        deferredQueue: DeferredValidationQueue,
-        typeResolver: TypeResolver,
-        allClassSpecs: ClassSpec[],
-        errors: PipelineError[],
-        log?: Logger<AppLogObj>,
-    ): void {
-        for (const routedBlock of file.blocks) {
-            if (routedBlock.diagramType !== DiagramType.CLASS_DIAGRAM) continue;
-
-            try {
-                // Phase 3a.0: Extract parsed classes from mermaid block
-                log?.debug("Extracting class diagram", { file: file.path });
-                const diagramResult = this.classExtractor.extract(routedBlock.block);
-
-                if (diagramResult.parseError) {
-                    log?.warn("Extract parse error", { file: file.path, error: diagramResult.parseError });
-                    errors.push({
-                        phase: "extract",
-                        path: file.path,
-                        message: diagramResult.parseError,
-                        code: "PARSE_FAILURE",
-                        userMessage: [diagramResult.parseError], // TODO: add proper userMessage to extract errors
-                    });
-                }
-
-                if (diagramResult.classes.length === 0) continue;
-
-                // Phase 3a.1: Unit validation
-                log?.debug("Validating classes", { count: diagramResult.classes.length });
-                const validationReport = this.classDiagramValidator.validate(diagramResult);
-
-                if (validationReport.validClasses.length === 0) continue;
-
-                // Build currentDiagramClasses map from valid classes
-                const currentDiagramClasses = new Map<string, string>();
-                for (const cls of validationReport.validClasses) {
-                    const address = cls.annotations?.address;
-                    if (address) {
-                        currentDiagramClasses.set(cls.name, `${address}.${cls.name}`);
-                    }
-                }
-
-                // Phase 3a.2: Build entities
-                log?.debug("Building entities", { validClasses: validationReport.validClasses.length });
-                const entityBuilder = new EntityBuilder();
-                const buildResult = entityBuilder.buildClassSpecs(
-                    validationReport.validClasses,
-                    diagramResult.relations,
-                    {
-                        registry,
-                        deferredQueue,
-                        typeResolver,
-                        currentDiagramClasses,
-                        specFile: file.path,
-                    },
-                );
-
-                for (const err of buildResult.errors) {
-                    log?.warn("Build error", { file: file.path, code: err.code });
-                    errors.push({
-                        phase: "build",
-                        path: file.path,
-                        message: err.message,
-                        code: err.code,
-                        userMessage: [err.message], // TODO: add proper userMessage to build errors
-                    });
-                }
-
-                allClassSpecs.push(...buildResult.classSpecs);
-                log?.debug("Built classSpecs", { count: buildResult.classSpecs.length });
-            } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                log?.error("Extract failed", { file: file.path, error: msg });
-                errors.push({
-                    phase: "extract",
-                    path: file.path,
-                    message: msg,
-                    code: "PARSE_FAILURE",
-                    userMessage: [msg], // TODO: add proper userMessage to extract catch errors
-                });
-            }
-        }
-    }
-
-    /**
-     * Phase 5: Write definition entities to database.
-     */
-    private writeToDatabase(
-        definitions: ClassSpec[],
-        writeConfig: WriteConfig,
-        errors: PipelineError[],
-        log?: Logger<AppLogObj>,
-    ): WriteResult {
-        const writer = new DgraphWriter();
-        const result = writer.write(definitions, writeConfig, log);
-
-        for (const err of result.errors) {
-            errors.push({
-                phase: "write",
-                path: "",
-                message: err.message,
-                code: err.code,
-                userMessage: [err.message], // TODO: add proper userMessage to write errors
-            });
-        }
-
-        return result;
-    }
+    // TODO: Phase 3a — buildEntities (extract class diagrams, unit-validate, build entities)
+    // TODO: Phase 5 — writeToDatabase (write definition entities to database)
 
     /**
      * Discover files from all paths.
@@ -342,48 +245,93 @@ export class ParsePipeline {
     }
 
     /**
-     * Parse file contents (extract mermaid blocks).
+     * Phase 2a: Extract markdown structure (code blocks grouped by language + tables).
+     * Files with ERROR-severity extraction errors are skipped.
      */
-    private parse(
+    private extractMarkdown(
         contents: { path: string; content: string }[],
-        parsedFiles: ParsedFile[],
         errors: PipelineError[],
         log?: Logger<AppLogObj>,
-    ): { blocksExtracted: number } {
-        let blocksExtracted = 0;
+    ): ExtractionResult[] {
+        const results: ExtractionResult[] = [];
 
         for (const file of contents) {
             log?.debug("Parsing file", { file: file.path });
-            const parseResult = this.markdownParser.parse(file.content, file.path, log);
 
-            // Collect parse errors
-            const realErrors = parseResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);
-            if (realErrors.length > 0) {
-                for (const err of realErrors) {
+            const extractionResult = this.markdownParser.parse(file.content, file.path, log);
+
+            const extractionErrors = extractionResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);
+            if (extractionErrors.length > 0) {
+                for (const err of extractionErrors) {
                     log?.warn("Parse error", { file: file.path, line: err.line });
                     errors.push({
                         phase: "parse",
                         path: file.path,
                         message: err.message,
                         code: `LINE_${err.line}`,
-                        userMessage: [err.message], // TODO: add proper userMessage to parse errors
+                        userMessage: [err.message],
                     });
                 }
-                // Skip files with actual errors
                 continue;
             }
 
-            // Build ParsedFile
-            parsedFiles.push({
-                path: file.path,
-                blocks: parseResult.routedBlocks,
-                tables: parseResult.tables,
-            });
-
-            blocksExtracted += parseResult.routedBlocks.length;
+            results.push(extractionResult);
         }
 
+        log?.info("Extraction complete", { filesExtracted: results.length });
+        return results;
+    }
+
+    /**
+     * Phase 2b: Validate mermaid blocks via mermaid.parse() and build ParsedFiles.
+     */
+    private async validateMermaid(
+        extractedFiles: ExtractionResult[],
+        errors: PipelineError[],
+        log?: Logger<AppLogObj>,
+    ): Promise<{ parsedFiles: ParsedFile[]; routedDiagrams: RoutedDiagrams; blocksExtracted: number }> {
+        const parsedFiles: ParsedFile[] = [];
+        const allValidatedBlocks: ValidatedMermaidBlock[] = [];
+        let blocksExtracted = 0;
+
+        for (const extraction of extractedFiles) {
+            const mermaidBlocks = extraction.codeBlocks["mermaid"] ?? [];
+
+            // Pipeline-level mermaid presence warnings
+            const allBlockCount = Object.values(extraction.codeBlocks).reduce(
+                (sum, blocks) => sum + blocks.length, 0,
+            );
+            if (mermaidBlocks.length === 0 && allBlockCount > 0) {
+                log?.warn("File has code blocks but none are mermaid", { file: extraction.specFile });
+            } else if (mermaidBlocks.length === 0) {
+                log?.warn("No mermaid diagrams found in file", { file: extraction.specFile });
+            }
+
+            const validationResult = await this.mermaidValidator.validateAll(mermaidBlocks, extraction.specFile, log);
+
+            for (const err of validationResult.errors.filter(e => e.severity === ErrorSeverity.ERROR)) {
+                errors.push({
+                    phase: "parse",
+                    path: extraction.specFile,
+                    message: err.message,
+                    code: `LINE_${err.line}`,
+                    userMessage: [err.message],
+                });
+            }
+
+            parsedFiles.push({
+                path: extraction.specFile,
+                blocks: validationResult.validatedBlocks,
+                tables: extraction.tables,
+            });
+
+            allValidatedBlocks.push(...validationResult.validatedBlocks);
+            blocksExtracted += validationResult.validatedBlocks.length;
+        }
+
+        const routedDiagrams = this.diagramRouter.routeByDiagramType(allValidatedBlocks);
+
         log?.info("Parse complete", { filesParsed: parsedFiles.length, blocksExtracted });
-        return { blocksExtracted };
+        return { parsedFiles, routedDiagrams, blocksExtracted };
     }
 }
