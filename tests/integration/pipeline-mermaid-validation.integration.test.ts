@@ -282,6 +282,21 @@ classDiagram
 `,
         );
 
+        // multiple-empty-blocks: 2 empty mermaid blocks in one file
+        const multipleEmpty = join(TEMP_DIR, "multiple-empty-blocks");
+        await mkdir(multipleEmpty, { recursive: true });
+        await writeFile(
+            join(multipleEmpty, "spec.md"),
+            `# Multiple Empty
+
+\`\`\`mermaid
+\`\`\`
+
+\`\`\`mermaid
+\`\`\`
+`,
+        );
+
         // valid-with-empty: 1 valid block + 1 empty block in same file
         const validWithEmpty = join(TEMP_DIR, "valid-with-empty");
         await mkdir(validWithEmpty, { recursive: true });
@@ -493,15 +508,17 @@ classDiagram
             expect(result.stats.blocksExtracted).toBe(1);
         });
 
-        it("should reject empty blocks without pipeline errors", async () => {
+        it("should reject multiple empty blocks all without pipeline errors", async () => {
             const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "empty-mermaid-block")],
+                paths: [join(TEMP_DIR, "multiple-empty-blocks")],
             };
 
             const result = await pipeline.run(config);
 
             expect(result.files[0]!.blocks).toHaveLength(0);
-            expect(result.errors.filter((e) => e.phase === "parse")).toHaveLength(0);
+            expect(result.stats.blocksExtracted).toBe(0);
+            const parseErrors = result.errors.filter((e) => e.phase === "parse");
+            expect(parseErrors).toHaveLength(0);
         });
     });
 
