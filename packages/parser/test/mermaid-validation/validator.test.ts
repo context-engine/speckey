@@ -240,7 +240,8 @@ describe("MermaidValidator", () => {
 			const block = makeBlock("classDiagram\n  class Foo {", 10, 15);
 			const result = await validator.validateAll([block], "test.md");
 
-			expect(result.errors[0]?.line).toBeGreaterThanOrEqual(10);
+			// Implementation uses block.startLine directly (no per-line offset from mermaid)
+			expect(result.errors[0]?.line).toBe(10);
 		});
 
 		it("should catch mermaid.parse() exceptions gracefully", async () => {
@@ -250,6 +251,16 @@ describe("MermaidValidator", () => {
 			// Should NOT throw — returns errors in result
 			expect(result.errors.length).toBeGreaterThan(0);
 			expect(result.errors[0]?.severity).toBe(ErrorSeverity.ERROR);
+		});
+
+		it("should assign UNKNOWN type for unrecognized diagram types", async () => {
+			const block = makeBlock('pie title Pets\n  "Dogs" : 386\n  "Cats" : 85');
+			const result = await validator.validateAll([block], "test.md");
+
+			expect(result.validatedBlocks).toHaveLength(1);
+			expect(result.validatedBlocks[0]?.diagramType).toBe(DiagramType.UNKNOWN);
+			// No warning at validation stage — unknown type is a routing concern
+			expect(result.errors).toHaveLength(0);
 		});
 
 		it("should preserve per-block error detail in mixed scenarios", async () => {
@@ -295,10 +306,7 @@ describe("MermaidValidator", () => {
 			const block = makeBlock("classDiagram\n  class Foo");
 			await validator.validateAll([block], "test.md", logger);
 
-			const debugLog = logs.find((l) => {
-				const msg = getMsg(l);
-				return msg.toLowerCase().includes("validated") || msg.toLowerCase().includes("block");
-			});
+			const debugLog = logs.find((l) => getMsg(l) === "Block validated");
 			expect(debugLog).toBeDefined();
 		});
 
@@ -307,10 +315,7 @@ describe("MermaidValidator", () => {
 			const block = makeBlock("invalid syntax {{{");
 			await validator.validateAll([block], "test.md", logger);
 
-			const errorLog = logs.find((l) => {
-				const msg = getMsg(l);
-				return msg.toLowerCase().includes("syntax") || msg.toLowerCase().includes("error");
-			});
+			const errorLog = logs.find((l) => getMsg(l) === "Mermaid syntax error");
 			expect(errorLog).toBeDefined();
 		});
 
@@ -319,10 +324,7 @@ describe("MermaidValidator", () => {
 			const block = makeBlock("");
 			await validator.validateAll([block], "test.md", logger);
 
-			const warnLog = logs.find((l) => {
-				const msg = getMsg(l);
-				return msg.toLowerCase().includes("empty");
-			});
+			const warnLog = logs.find((l) => getMsg(l).startsWith("Empty mermaid block"));
 			expect(warnLog).toBeDefined();
 		});
 	});
