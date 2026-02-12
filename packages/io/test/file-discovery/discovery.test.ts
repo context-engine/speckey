@@ -317,6 +317,23 @@ describe("FileDiscovery", () => {
 			expect(result.files.some((f) => f.endsWith("exclude_this.md"))).toBe(false);
 			expect(result.files.some((f) => f.endsWith("large.md"))).toBe(false);
 		});
+
+		it("should return error when all files are excluded by filters", async () => {
+			const config = {
+				include: ["**/*.md"],
+				exclude: ["**/*.md"],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const result = await discovery.discover(config);
+
+			expect(result.files).toHaveLength(0);
+			expect(result.skipped.some((s) => s.reason === SkipReason.EXCLUDED_PATTERN)).toBe(true);
+			expect(result.errors).toHaveLength(1);
+			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
+		});
 	});
 
 	// ============================================================
