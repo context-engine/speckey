@@ -4,25 +4,23 @@ import { join, resolve } from "node:path";
 import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig, PipelineResult } from "../../packages/core/src/types";
-import { DiagramType } from "../../packages/parser/src/mermaid-validation/types";
 
 /**
- * Pipeline ↔ MermaidExtraction Integration Tests
+ * Pipeline ↔ MarkdownExtraction Integration Tests
  *
- * Scope: Boundary contract between ParsePipeline (Phase 2) and
- * MarkdownParser + DiagramRouter.
- * Tests content forwarding, error severity filtering, ParsedFile
- * construction, diagram type routing, table pass-through, stats
- * accuracy, logger forwarding, and error mapping.
+ * Scope: Boundary contract between ParsePipeline (Phase 2a) and
+ * MarkdownParser — content forwarding, code block extraction & language
+ * grouping, table extraction, extraction-level error filtering, stats
+ * accuracy, logger forwarding.
  *
- * Does NOT test: MarkdownParser internals, DiagramRouter internals,
- * FileDiscovery, CLI, or Phases 3a-5.
+ * Does NOT test: MarkdownParser internals, MermaidValidator, DiagramRouter,
+ * CLI, FileDiscovery, or Phases 3a-5.
  */
 
 const FIXTURES_DIR = resolve(import.meta.dir, "../fixtures");
-const TEMP_DIR = resolve(import.meta.dir, "../temp-pipeline-mermaid-extraction");
+const TEMP_DIR = resolve(import.meta.dir, "../temp-pipeline-markdown-extraction");
 
-describe("Pipeline ↔ MermaidExtraction Integration", () => {
+describe("Pipeline ↔ MarkdownExtraction Integration", () => {
     const pipeline = new ParsePipeline();
 
     beforeAll(async () => {
@@ -41,37 +39,6 @@ classDiagram
         +id: string
         +name: string
     }
-\`\`\`
-`,
-        );
-
-        // multi-block: 1 .md file with 3 mermaid blocks (classDiagram, sequenceDiagram, erDiagram)
-        const multiBlock = join(TEMP_DIR, "multi-block");
-        await mkdir(multiBlock, { recursive: true });
-        await writeFile(
-            join(multiBlock, "spec.md"),
-            `# Multi Block
-
-\`\`\`mermaid
-classDiagram
-    class Alpha {
-        +string name
-    }
-\`\`\`
-
-Some text.
-
-\`\`\`mermaid
-sequenceDiagram
-    Client->>Server: Request
-    Server-->>Client: Response
-\`\`\`
-
-More text.
-
-\`\`\`mermaid
-erDiagram
-    USER ||--o{ ORDER : places
 \`\`\`
 `,
         );
@@ -178,21 +145,7 @@ Just text below, no tables.
 `,
         );
 
-        // empty-mermaid-block: 1 .md file with empty ```mermaid``` block
-        const emptyBlock = join(TEMP_DIR, "empty-mermaid-block");
-        await mkdir(emptyBlock, { recursive: true });
-        await writeFile(
-            join(emptyBlock, "spec.md"),
-            `# Empty Block
-
-\`\`\`mermaid
-\`\`\`
-
-Some text after.
-`,
-        );
-
-        // mixed-valid-and-empty: some files with mermaid, some without
+        // mixed-content: one file with mermaid, one without
         const mixedDir = join(TEMP_DIR, "mixed-content");
         await mkdir(mixedDir, { recursive: true });
         await writeFile(
@@ -207,21 +160,6 @@ classDiagram
 `,
         );
         await writeFile(join(mixedDir, "no-mermaid.md"), "# No Mermaid\n\nPlain text.\n");
-
-        // flowchart-file: .md file with flowchart
-        const flowchartDir = join(TEMP_DIR, "flowchart-file");
-        await mkdir(flowchartDir, { recursive: true });
-        await writeFile(
-            join(flowchartDir, "spec.md"),
-            `# Flowchart
-
-\`\`\`mermaid
-flowchart TD
-    A --> B
-    B --> C
-\`\`\`
-`,
-        );
     });
 
     afterAll(async () => {
@@ -233,7 +171,7 @@ flowchart TD
     // ============================================================
 
     describe("Content Forwarding — File Content to Parser", () => {
-        it("should parse single file with mermaid blocks", async () => {
+        it("should parse single file with code blocks", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
             };
@@ -241,7 +179,6 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBeGreaterThanOrEqual(1);
             expect(result.files).toHaveLength(1);
             expect(result.files[0]!.path).toContain("single-class");
         });
@@ -256,25 +193,20 @@ flowchart TD
             expect(result.stats.filesParsed).toBe(3);
             expect(result.files).toHaveLength(3);
 
-            // Each file has unique path
             const paths = result.files.map((f) => f.path);
             const uniquePaths = new Set(paths);
             expect(uniquePaths.size).toBe(3);
         });
 
-        it("should parse file with no mermaid blocks (warning, not error)", async () => {
+        it("should parse file with no code blocks (warning, not error)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "no-mermaid")],
             };
 
             const result = await pipeline.run(config);
 
-            // File is still parsed (WARNING doesn't skip)
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(0);
             expect(result.files).toHaveLength(1);
-            expect(result.files[0]!.blocks).toEqual([]);
-            // No phase="parse" errors (warnings are not forwarded)
             const parseErrors = result.errors.filter((e) => e.phase === "parse");
             expect(parseErrors).toHaveLength(0);
         });
@@ -287,85 +219,9 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(0);
             expect(result.files).toHaveLength(1);
-            expect(result.files[0]!.blocks).toEqual([]);
             const parseErrors = result.errors.filter((e) => e.phase === "parse");
             expect(parseErrors).toHaveLength(0);
-        });
-    });
-
-    // ============================================================
-    // Feature: Diagram Type Routing
-    // ============================================================
-
-    describe("Diagram Type Routing", () => {
-        it("should detect classDiagram type", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "single-class")],
-            };
-
-            const result = await pipeline.run(config);
-
-            expect(result.files[0]!.blocks).toHaveLength(1);
-            const block = result.files[0]!.blocks[0]!;
-            expect(block.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
-            expect(block.content).toContain("classDiagram");
-        });
-
-        it("should detect multiple diagram types in one file", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "multi-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            const blocks = result.files[0]!.blocks;
-            expect(blocks).toHaveLength(3);
-            expect(result.stats.blocksExtracted).toBe(3);
-
-            const types = blocks.map((b) => b.diagramType);
-            expect(types).toContain(DiagramType.CLASS_DIAGRAM);
-            expect(types).toContain(DiagramType.SEQUENCE_DIAGRAM);
-            expect(types).toContain(DiagramType.ER_DIAGRAM);
-        });
-
-        it("should detect mixed diagram types across multiple files", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "multi-file")],
-            };
-
-            const result = await pipeline.run(config);
-
-            expect(result.stats.filesParsed).toBe(3);
-            expect(result.stats.blocksExtracted).toBe(3);
-
-            const allTypes = result.files.flatMap((f) => f.blocks.map((b) => b.diagramType));
-            expect(allTypes).toContain(DiagramType.CLASS_DIAGRAM);
-            expect(allTypes).toContain(DiagramType.SEQUENCE_DIAGRAM);
-            expect(allTypes).toContain(DiagramType.ER_DIAGRAM);
-        });
-
-        it("should detect flowchart diagram type", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "flowchart-file")],
-            };
-
-            const result = await pipeline.run(config);
-
-            expect(result.files[0]!.blocks).toHaveLength(1);
-            expect(result.files[0]!.blocks[0]!.diagramType).toBe(DiagramType.FLOWCHART);
-        });
-
-        it("should exclude empty mermaid blocks from validated results", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "empty-mermaid-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            // Empty blocks are rejected by MermaidValidator (WARNING), not included in validatedBlocks
-            expect(result.files[0]!.blocks).toHaveLength(0);
         });
     });
 
@@ -410,28 +266,46 @@ flowchart TD
 
             const result = await pipeline.run(config);
 
-            // with-tables fixture has 2 tables
             expect(result.files[0]!.tables).toHaveLength(2);
         });
     });
 
     // ============================================================
-    // Feature: Line Number Tracking
+    // Feature: Code Block Grouping by Language
     // ============================================================
 
-    describe("Line Number Tracking", () => {
-        it("should provide 1-indexed line numbers for blocks", async () => {
+    describe("Code Block Grouping by Language", () => {
+        it("should extract non-mermaid code blocks (no pipeline error)", async () => {
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "non-mermaid-code")],
+            };
+
+            const result = await pipeline.run(config);
+
+            // Non-mermaid blocks are extracted but only mermaid blocks reach ParsedFile.blocks
+            expect(result.files[0]!.blocks).toEqual([]);
+            // No errors — extraction succeeded, just no mermaid to validate
+            expect(result.errors.filter((e) => e.phase === "parse")).toHaveLength(0);
+        });
+
+        it("should extract mermaid blocks alongside non-mermaid blocks", async () => {
+            // single-class has only mermaid — just verifying that mermaid extraction works
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
             };
 
             const result = await pipeline.run(config);
 
-            const block = result.files[0]!.blocks[0]!;
-            expect(block.startLine).toBeGreaterThan(0);
-            expect(block.endLine).toBeGreaterThan(block.startLine);
+            // Mermaid block passed through extraction and validation
+            expect(result.files[0]!.blocks.length).toBeGreaterThanOrEqual(1);
         });
+    });
 
+    // ============================================================
+    // Feature: Line Number Tracking — Extraction Level
+    // ============================================================
+
+    describe("Line Number Tracking — Extraction Level", () => {
         it("should provide 1-indexed line numbers for tables", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "with-tables")],
@@ -445,28 +319,24 @@ flowchart TD
             }
         });
 
-        it("should have distinct line ranges for multiple blocks", async () => {
+        it("should provide 1-indexed line numbers for blocks", async () => {
             const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "multi-block")],
+                paths: [join(TEMP_DIR, "single-class")],
             };
 
             const result = await pipeline.run(config);
 
-            const blocks = result.files[0]!.blocks;
-            expect(blocks.length).toBeGreaterThanOrEqual(2);
-
-            // Each block's end line should be before next block's start line
-            for (let i = 0; i < blocks.length - 1; i++) {
-                expect(blocks[i]!.endLine).toBeLessThan(blocks[i + 1]!.startLine);
-            }
+            const block = result.files[0]!.blocks[0]!;
+            expect(block.startLine).toBeGreaterThan(0);
+            expect(block.endLine).toBeGreaterThan(block.startLine);
         });
     });
 
     // ============================================================
-    // Feature: Error Severity Filtering
+    // Feature: Error Severity Filtering — Extraction Level
     // ============================================================
 
-    describe("Error Severity Filtering", () => {
+    describe("Error Severity Filtering — Extraction Level", () => {
         it("should not skip file on WARNING (no-mermaid case)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "no-mermaid")],
@@ -474,44 +344,39 @@ flowchart TD
 
             const result = await pipeline.run(config);
 
-            // WARNING doesn't skip — file is still in result.files
             expect(result.stats.filesParsed).toBe(1);
             expect(result.files).toHaveLength(1);
-            // No parse phase errors
             const parseErrors = result.errors.filter((e) => e.phase === "parse");
             expect(parseErrors).toHaveLength(0);
         });
 
-        it("should handle mix of files with and without mermaid blocks", async () => {
+        it("should handle mix of files with and without code blocks", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "mixed-content")],
             };
 
             const result = await pipeline.run(config);
 
-            // Both files parsed (warning for no-mermaid doesn't skip)
             expect(result.stats.filesParsed).toBe(2);
             expect(result.stats.filesRead).toBe(2);
             expect(result.files).toHaveLength(2);
 
-            // One file has blocks, one doesn't
             const withBlocks = result.files.filter((f) => f.blocks.length > 0);
             const withoutBlocks = result.files.filter((f) => f.blocks.length === 0);
             expect(withBlocks).toHaveLength(1);
             expect(withoutBlocks).toHaveLength(1);
 
-            // No parse errors
             const parseErrors = result.errors.filter((e) => e.phase === "parse");
             expect(parseErrors).toHaveLength(0);
         });
     });
 
     // ============================================================
-    // Feature: Stats Accuracy — Phase 2
+    // Feature: Stats Accuracy — Phase 2a
     // ============================================================
 
-    describe("Stats Accuracy — Phase 2", () => {
-        it("should report accurate stats for all files with mermaid blocks", async () => {
+    describe("Stats Accuracy — Phase 2a", () => {
+        it("should report accurate stats for all files extracted", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "multi-file")],
             };
@@ -521,22 +386,9 @@ flowchart TD
             expect(result.stats.filesDiscovered).toBe(3);
             expect(result.stats.filesRead).toBe(3);
             expect(result.stats.filesParsed).toBe(3);
-            expect(result.stats.blocksExtracted).toBe(3);
-            expect(result.stats.errorsCount).toBe(0);
         });
 
-        it("should count multiple blocks from one file", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "multi-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(3);
-        });
-
-        it("should report zero blocks for no-mermaid file", async () => {
+        it("should report filesParsed=1 for file with no code blocks", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "no-mermaid")],
             };
@@ -544,32 +396,6 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(0);
-        });
-
-        it("should not count empty/rejected blocks in blocksExtracted", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "empty-mermaid-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            // Empty blocks are rejected by MermaidValidator, not counted in blocksExtracted
-            expect(result.stats.blocksExtracted).toBe(0);
-        });
-
-        it("should maintain errorsCount invariant with parse results", async () => {
-            const configs: PipelineConfig[] = [
-                { paths: [join(TEMP_DIR, "single-class")] },
-                { paths: [join(TEMP_DIR, "no-mermaid")] },
-                { paths: [join(TEMP_DIR, "multi-file")] },
-                { paths: [join(TEMP_DIR, "mixed-content")] },
-            ];
-
-            for (const config of configs) {
-                const result = await pipeline.run(config);
-                expect(result.stats.errorsCount).toBe(result.errors.length);
-            }
         });
 
         it("should report stats for mixed-content directory", async () => {
@@ -582,16 +408,28 @@ flowchart TD
             expect(result.stats.filesDiscovered).toBe(2);
             expect(result.stats.filesRead).toBe(2);
             expect(result.stats.filesParsed).toBe(2);
-            // Only the mermaid file contributes blocks
-            expect(result.stats.blocksExtracted).toBe(1);
+        });
+
+        it("should maintain errorsCount invariant", async () => {
+            const configs: PipelineConfig[] = [
+                { paths: [join(TEMP_DIR, "single-class")] },
+                { paths: [join(TEMP_DIR, "no-mermaid")] },
+                { paths: [join(TEMP_DIR, "multi-file")] },
+                { paths: [join(TEMP_DIR, "mixed-content")] },
+            ];
+
+            for (const config of configs) {
+                const result = await pipeline.run(config);
+                expect(result.stats.errorsCount).toBe(result.errors.length);
+            }
         });
     });
 
     // ============================================================
-    // Feature: Logger Forwarding — Parse Phase
+    // Feature: Logger Forwarding — Extraction Phase
     // ============================================================
 
-    describe("Logger Forwarding — Parse Phase", () => {
+    describe("Logger Forwarding — Extraction Phase", () => {
         function createTestLogger() {
             const logs: Record<string, unknown>[] = [];
             const logger = new Logger<AppLogObj>({
@@ -631,14 +469,14 @@ flowchart TD
             const scoped = parseScoped(logs);
             expect(scoped.length).toBeGreaterThan(0);
 
-            // Parser-originated logs prove the logger was forwarded
+            // Parser-originated log proves the logger was forwarded
             const extractedBlocks = scoped.find(
                 (l) => getMsg(l) === "Extracted code blocks",
             );
             expect(extractedBlocks).toBeDefined();
         });
 
-        it("should emit pipeline-level parse boundary logs", async () => {
+        it("should emit parser-originated 'Extracted code blocks' log", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
@@ -647,20 +485,16 @@ flowchart TD
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-
-            // Pipeline boundary messages
-            const parsingFile = scoped.find((l) => getMsg(l) === "Parsing file");
-            const parseComplete = scoped.find((l) => getMsg(l) === "Parse complete");
-            expect(parsingFile).toBeDefined();
-            expect(parseComplete).toBeDefined();
-
-            // Parse complete should include stats
-            const completeData = getData(parseComplete!);
-            expect(completeData).toHaveProperty("filesParsed");
-            expect(completeData).toHaveProperty("blocksExtracted");
+            const extractedBlocks = scoped.find(
+                (l) => getMsg(l) === "Extracted code blocks",
+            );
+            expect(extractedBlocks).toBeDefined();
+            const data = getData(extractedBlocks!);
+            expect(data).toHaveProperty("count");
+            expect(data).toHaveProperty("file");
         });
 
-        it("should emit parser-originated logs with extraction details", async () => {
+        it("should emit parser-originated 'Extracted tables' log", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "with-tables")],
@@ -669,78 +503,16 @@ flowchart TD
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-
-            // MarkdownParser "Extracted code blocks"
-            const extractedBlocks = scoped.find(
-                (l) => getMsg(l) === "Extracted code blocks",
-            );
-            expect(extractedBlocks).toBeDefined();
-            const blocksData = getData(extractedBlocks!);
-            expect(blocksData).toHaveProperty("count");
-            expect(blocksData).toHaveProperty("file");
-
-            // MarkdownParser "Extracted tables" (only emitted when tables present)
             const extractedTables = scoped.find(
                 (l) => getMsg(l) === "Extracted tables",
             );
             expect(extractedTables).toBeDefined();
-            const tablesData = getData(extractedTables!);
-            expect(tablesData).toHaveProperty("count");
-            expect(tablesData).toHaveProperty("file");
+            const data = getData(extractedTables!);
+            expect(data).toHaveProperty("count");
+            expect(data).toHaveProperty("file");
         });
 
-        it("should emit warning logs for no-mermaid files", async () => {
-            const { logger, logs } = createTestLogger();
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "no-mermaid")],
-            };
-
-            await pipeline.run(config, logger);
-
-            const scoped = parseScoped(logs);
-
-            // Parser should emit warning about no mermaid diagrams
-            const noMermaidWarning = scoped.find(
-                (l) => getMsg(l) === "No mermaid diagrams found in file",
-            );
-            expect(noMermaidWarning).toBeDefined();
-        });
-
-        it("should emit warning for non-mermaid code blocks only", async () => {
-            const { logger, logs } = createTestLogger();
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "non-mermaid-code")],
-            };
-
-            await pipeline.run(config, logger);
-
-            const scoped = parseScoped(logs);
-
-            // Parser should emit warning about code blocks but no mermaid
-            const warning = scoped.find(
-                (l) => getMsg(l) === "File has code blocks but none are mermaid",
-            );
-            expect(warning).toBeDefined();
-        });
-
-        it("should emit warning for empty mermaid blocks", async () => {
-            const { logger, logs } = createTestLogger();
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "empty-mermaid-block")],
-            };
-
-            await pipeline.run(config, logger);
-
-            const scoped = parseScoped(logs);
-
-            // Parser should emit warning about empty mermaid block
-            const emptyWarning = scoped.find(
-                (l) => getMsg(l).startsWith("Empty mermaid block at line"),
-            );
-            expect(emptyWarning).toBeDefined();
-        });
-
-        it("should run parse phase without logger (no crash)", async () => {
+        it("should run extraction phase without logger (no crash)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
             };
@@ -749,64 +521,16 @@ flowchart TD
 
             expect(result).toBeDefined();
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBeGreaterThanOrEqual(1);
             expect(result.errors).toHaveLength(0);
         });
     });
 
     // ============================================================
-    // Feature: PipelineResult Shape — Phase 2 Active
+    // Feature: Phase 1b → Phase 2a Handoff
     // ============================================================
 
-    describe("PipelineResult Shape — Phase 2 Active", () => {
-        it("should return correct shape with discovery + parse active", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "multi-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            // Phase 2 active: files has entries
-            expect(result.files.length).toBeGreaterThan(0);
-            for (const file of result.files) {
-                expect(file.path).toBeDefined();
-                expect(Array.isArray(file.blocks)).toBe(true);
-                expect(Array.isArray(file.tables)).toBe(true);
-            }
-
-            // Phase 3a+ gated
-            expect(result.classSpecs).toEqual([]);
-            expect(result.validationReport).toBeUndefined();
-            expect(result.writeResult).toBeUndefined();
-
-            // Only valid phase errors
-            for (const err of result.errors) {
-                expect(["discovery", "read", "parse"]).toContain(err.phase);
-            }
-
-            // Stats accuracy
-            expect(result.stats.filesParsed).toBe(result.files.length);
-            assertPhaseGatedShape(result);
-        });
-
-        it("should exclude empty mermaid blocks from validated results", async () => {
-            const config: PipelineConfig = {
-                paths: [join(TEMP_DIR, "empty-mermaid-block")],
-            };
-
-            const result = await pipeline.run(config);
-
-            // Empty blocks are rejected by MermaidValidator, not included in validatedBlocks
-            expect(result.files[0]!.blocks).toHaveLength(0);
-        });
-    });
-
-    // ============================================================
-    // Feature: Phase 1b → Phase 2 Handoff
-    // ============================================================
-
-    describe("Phase 1b → Phase 2 Handoff", () => {
-        it("should parse all read files", async () => {
+    describe("Phase 1b → Phase 2a Handoff", () => {
+        it("should extract all read files", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "multi-file")],
             };
@@ -817,9 +541,8 @@ flowchart TD
             expect(result.stats.filesParsed).toBe(3);
         });
 
-        it("should not parse files skipped by read (maxFileSizeMb)", async () => {
-            // Create a large file to trigger size-based skip
-            const largeDir = join(TEMP_DIR, "large-parse-test");
+        it("should not extract files skipped by read (maxFileSizeMb)", async () => {
+            const largeDir = join(TEMP_DIR, "large-extract-test");
             await mkdir(largeDir, { recursive: true });
             await writeFile(
                 join(largeDir, "small.md"),
@@ -841,12 +564,11 @@ flowchart TD
             expect(result.stats.filesRead).toBe(1);
             expect(result.stats.filesParsed).toBe(1);
 
-            // Cleanup
             await rm(largeDir, { recursive: true, force: true });
         });
 
-        it("should result in zero parsed files for empty directory", async () => {
-            const emptyDir = join(TEMP_DIR, "empty-parse-dir");
+        it("should result in zero extracted files for empty directory", async () => {
+            const emptyDir = join(TEMP_DIR, "empty-extract-dir");
             await mkdir(emptyDir, { recursive: true });
 
             const config: PipelineConfig = {
@@ -864,11 +586,34 @@ flowchart TD
     });
 
     // ============================================================
+    // Feature: PipelineResult Shape — Phase 2a+2b Active
+    // ============================================================
+
+    describe("PipelineResult Shape — Phase 2a+2b Active", () => {
+        it("should return correct shape with discovery + extraction active", async () => {
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "single-class")],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.files.length).toBeGreaterThan(0);
+            for (const file of result.files) {
+                expect(file.path).toBeDefined();
+                expect(Array.isArray(file.blocks)).toBe(true);
+                expect(Array.isArray(file.tables)).toBe(true);
+            }
+
+            assertPhaseGatedShape(result);
+        });
+    });
+
+    // ============================================================
     // Feature: Existing Fixture Smoke Tests
     // ============================================================
 
     describe("Existing Fixture Smoke Tests", () => {
-        it("should parse simple-spec fixture (2 mermaid blocks + 1 table)", async () => {
+        it("should extract simple-spec fixture (1 file, 2 blocks, 1 table)", async () => {
             const config: PipelineConfig = {
                 paths: [resolve(FIXTURES_DIR, "simple-spec")],
             };
@@ -876,23 +621,14 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(2);
             expect(result.files).toHaveLength(1);
-
-            const file = result.files[0]!;
-            // classDiagram + sequenceDiagram
-            const types = file.blocks.map((b) => b.diagramType);
-            expect(types).toContain(DiagramType.CLASS_DIAGRAM);
-            expect(types).toContain(DiagramType.SEQUENCE_DIAGRAM);
-
-            // 1 table
-            expect(file.tables).toHaveLength(1);
-            expect(file.tables[0]!.rows.length).toBeGreaterThan(0);
+            expect(result.files[0]!.tables).toHaveLength(1);
+            expect(result.files[0]!.tables[0]!.rows.length).toBeGreaterThan(0);
 
             assertPhaseGatedShape(result);
         });
 
-        it("should parse multi-file-spec fixture (3 files, 1 block each)", async () => {
+        it("should extract multi-file-spec fixture (3 files)", async () => {
             const config: PipelineConfig = {
                 paths: [resolve(FIXTURES_DIR, "multi-file-spec")],
             };
@@ -900,19 +636,12 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(3);
-            expect(result.stats.blocksExtracted).toBe(3);
             expect(result.files).toHaveLength(3);
-
-            // Mixed diagram types
-            const allTypes = result.files.flatMap((f) => f.blocks.map((b) => b.diagramType));
-            expect(allTypes).toContain(DiagramType.FLOWCHART);
-            expect(allTypes).toContain(DiagramType.ER_DIAGRAM);
-            expect(allTypes).toContain(DiagramType.STATE_DIAGRAM);
 
             assertPhaseGatedShape(result);
         });
 
-        it("should parse class-diagrams/multiple-diagrams fixture (3 class blocks)", async () => {
+        it("should extract class-diagrams/multiple-diagrams fixture (3 blocks)", async () => {
             const config: PipelineConfig = {
                 paths: [resolve(FIXTURES_DIR, "class-diagrams")],
                 include: ["multiple-diagrams.md"],
@@ -921,12 +650,7 @@ flowchart TD
             const result = await pipeline.run(config);
 
             expect(result.stats.filesParsed).toBe(1);
-            expect(result.stats.blocksExtracted).toBe(3);
-
-            const blocks = result.files[0]!.blocks;
-            for (const block of blocks) {
-                expect(block.diagramType).toBe(DiagramType.CLASS_DIAGRAM);
-            }
+            expect(result.files[0]!.blocks).toHaveLength(3);
 
             assertPhaseGatedShape(result);
         });
@@ -934,7 +658,7 @@ flowchart TD
 });
 
 /**
- * Assert the phase-gated result shape invariants (Phases 1+1b+2 active, 3a+ gated).
+ * Assert the phase-gated result shape invariants (Phases 1+1b+2a+2b active, 3a+ gated).
  */
 function assertPhaseGatedShape(result: PipelineResult): void {
     expect(result.classSpecs).toEqual([]);
