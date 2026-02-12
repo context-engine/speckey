@@ -364,10 +364,8 @@ More text.
 `;
 		const result = parser.parse(markdown, "test.md");
 
-		expect(result.tables[0]?.startLine).toBeGreaterThan(0);
-		expect(result.tables[0]?.endLine).toBeGreaterThanOrEqual(
-			result.tables[0]?.startLine ?? 0,
-		);
+		expect(result.tables[0]?.startLine).toBe(7);
+		expect(result.tables[0]?.endLine).toBe(9);
 	});
 
 	it("should assign distinct line positions to multiple blocks", () => {
@@ -516,6 +514,9 @@ classDiagram
 		const result = parser.parse(markdown, "test.md");
 		expect(result).toBeDefined();
 		expect(result.specFile).toBe("test.md");
+		// Remark implicitly closes unclosed fences at EOF — content is still extracted
+		expect(result.codeBlocks.mermaid).toHaveLength(1);
+		expect(result.codeBlocks.mermaid![0]?.content).toContain("classDiagram");
 	});
 
 	it("should preserve specFile in ExtractionResult", () => {
