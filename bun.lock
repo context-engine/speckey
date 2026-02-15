@@ -41,6 +41,7 @@
       "dependencies": {
         "@speckey/constants": "workspace:*",
         "@speckey/database": "workspace:*",
+        "@speckey/event-bus": "workspace:*",
         "@speckey/io": "workspace:*",
         "@speckey/logger": "workspace:*",
         "@speckey/parser": "workspace:*",
@@ -95,6 +96,13 @@
       },
       "peerDependencies": {
         "@speckey/mermaid-ast": "workspace:*",
+      },
+    },
+    "packages/event-bus": {
+      "name": "@speckey/event-bus",
+      "version": "0.1.0",
+      "dependencies": {
+        "@speckey/constants": "workspace:*",
       },
     },
     "packages/io": {
@@ -442,6 +450,8 @@
     "@speckey/diagram-renderer": ["@speckey/diagram-renderer@workspace:packages/diagram-renderer"],
 
     "@speckey/diagram-svg": ["@speckey/diagram-svg@workspace:packages/diagram-svg"],
+
+    "@speckey/event-bus": ["@speckey/event-bus@workspace:packages/event-bus"],
 
     "@speckey/io": ["@speckey/io@workspace:packages/io"],
 

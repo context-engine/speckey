@@ -9,6 +9,7 @@
         "@speckey/io": "workspace:*",
         "@speckey/parser": "workspace:*",
         "@speckey/database": "workspace:*",
+        "@speckey/event-bus": "workspace:*",
         "@speckey/logger": "workspace:*"
     }
 }
