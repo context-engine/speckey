@@ -1,6 +1,6 @@
 import type { Logger, AppLogObj } from "@speckey/logger";
 import type { ValidatedMermaidBlock, TableNode, IntegrationValidationReport } from "@speckey/parser";
-import type { UserErrorMessage } from "@speckey/constants";
+import type { UserErrorMessage, PipelinePhase } from "@speckey/constants";
 import type { ClassSpec } from "./package-registry/types";
 import type { WriteConfig, WriteResult } from "@speckey/database";
 
@@ -112,10 +112,8 @@ export interface PipelineStats {
     validationErrors: number;
 }
 
-/**
- * Phase where an error occurred.
- */
-export type PipelinePhase = "discovery" | "read" | "parse" | "extract" | "unit_validate" | "build" | "integration_validate" | "write";
+// PipelinePhase is re-exported from @speckey/constants
+export type { PipelinePhase } from "@speckey/constants";
 
 /**
  * Error that occurred during pipeline execution.
