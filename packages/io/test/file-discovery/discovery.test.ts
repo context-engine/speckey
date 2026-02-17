@@ -5,13 +5,17 @@ import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
 import { DiscoveryErrors } from "@speckey/constants";
 import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
-import type { ErrorEventPayload } from "@speckey/event-bus";
+import type { ErrorEventPayload, LogEventPayload } from "@speckey/event-bus";
 
 function createTestBus() {
 	const bus = new PipelineEventBus();
 	const errors: ErrorEventPayload[] = [];
+	const warnings: LogEventPayload[] = [];
+	const infos: LogEventPayload[] = [];
 	bus.on(PipelineEvent.ERROR, (e) => errors.push(e as ErrorEventPayload));
-	return { bus, errors };
+	bus.on(PipelineEvent.WARN, (e) => warnings.push(e as LogEventPayload));
+	bus.on(PipelineEvent.INFO, (e) => infos.push(e as LogEventPayload));
+	return { bus, errors, warnings, infos };
 }
 
 describe("FileDiscovery", () => {
@@ -256,6 +260,24 @@ describe("FileDiscovery", () => {
 				),
 			).toBe(true);
 		});
+
+		it("should emit WARN for non-markdown files", async () => {
+			const { bus, warnings } = createTestBus();
+			const config = {
+				include: ["**/*"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			await discovery.discover(config, bus);
+
+			const txtWarning = warnings.find((w) => (w.context as Record<string, unknown>)?.path?.toString().endsWith("ignore.txt"));
+			expect(txtWarning).toBeDefined();
+			expect(txtWarning?.message).toBe("File skipped: not a markdown file");
+			expect((txtWarning?.context as Record<string, unknown>)?.reason).toBe("not_markdown");
+		});
 	});
 
 	// ============================================================
@@ -314,6 +336,24 @@ describe("FileDiscovery", () => {
 			expect(result.files.some((f) => f.endsWith("large.md"))).toBe(false);
 		});
 
+		it("should emit WARN for excluded files", async () => {
+			const { bus, warnings } = createTestBus();
+			const config = {
+				include: ["**/*.md"],
+				exclude: ["**/*_spec.md"],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			await discovery.discover(config, bus);
+
+			const excludeWarning = warnings.find((w) => (w.context as Record<string, unknown>)?.path?.toString().endsWith("test_spec.md"));
+			expect(excludeWarning).toBeDefined();
+			expect(excludeWarning?.message).toBe("File skipped: matched exclusion pattern");
+			expect((excludeWarning?.context as Record<string, unknown>)?.reason).toBe("excluded_pattern");
+		});
+
 		it("should emit error when all files are excluded by filters", async () => {
 			const { bus, errors } = createTestBus();
 			const config = {
@@ -360,6 +400,25 @@ describe("FileDiscovery", () => {
 					(s) => s.path.endsWith("large.md") && s.reason === SkipReason.TOO_LARGE,
 				),
 			).toBe(true);
+		});
+
+		it("should emit WARN for files exceeding size limit", async () => {
+			const { bus, warnings } = createTestBus();
+			const config = {
+				include: ["large.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const discovered = await discovery.discover(config);
+			await discovery.readFiles(discovered.files, 1, bus); // 1MB limit, large.md is 2MB
+
+			const largeWarning = warnings.find((w) => (w.context as Record<string, unknown>)?.reason === "too_large");
+			expect(largeWarning).toBeDefined();
+			expect(largeWarning?.message).toBe("File skipped: exceeds size limit");
+			expect((largeWarning?.context as Record<string, unknown>)?.maxFileSizeMb).toBe(1);
 		});
 
 		it("should set exceededFileLimit when file count exceeds maxFiles", async () => {
@@ -709,6 +768,49 @@ describe("FileDiscovery", () => {
 
 			expect(errors.length).toBeGreaterThanOrEqual(1);
 			expect(errors[0]?.code).toBe("ENOENT");
+		});
+
+		it("should emit INFO for discovery progress", async () => {
+			const { bus, infos } = createTestBus();
+			const config = {
+				include: ["**/spec*.md"],
+				exclude: ["**/node_modules/**", "**/.git/**"],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			await discovery.discover(config, bus);
+
+			const startInfo = infos.find((i) => i.message === "Discovering files");
+			expect(startInfo).toBeDefined();
+			expect((startInfo?.context as Record<string, unknown>)?.rootDir).toBeDefined();
+
+			const completeInfo = infos.find((i) => i.message === "Discovery complete");
+			expect(completeInfo).toBeDefined();
+			expect((completeInfo?.context as Record<string, unknown>)?.filesFound).toBeGreaterThanOrEqual(3);
+		});
+
+		it("should emit INFO for read progress", async () => {
+			const { bus, infos } = createTestBus();
+			const config = {
+				include: ["spec1.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: testDir,
+			};
+
+			const discovered = await discovery.discover(config);
+			await discovery.readFiles(discovered.files, 10, bus);
+
+			const startInfo = infos.find((i) => i.message === "Reading files");
+			expect(startInfo).toBeDefined();
+			expect((startInfo?.context as Record<string, unknown>)?.fileCount).toBe(1);
+
+			const completeInfo = infos.find((i) => i.message === "Read complete");
+			expect(completeInfo).toBeDefined();
+			expect((completeInfo?.context as Record<string, unknown>)?.filesRead).toBe(1);
 		});
 
 		it("should operate without bus (no crash) for readFiles()", async () => {

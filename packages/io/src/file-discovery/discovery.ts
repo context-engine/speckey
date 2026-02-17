@@ -2,7 +2,7 @@ import { accessSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Glob } from "bun";
 import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
-import type { ErrorEventPayload } from "@speckey/event-bus";
+import type { ErrorEventPayload, LogEventPayload } from "@speckey/event-bus";
 import { PipelinePhase } from "@speckey/constants";
 import {
 	type DiscoveredFiles,
@@ -39,6 +39,8 @@ export class FileDiscovery {
 				return result;
 			}
 
+			this.emitInfo(bus, PipelinePhase.DISCOVERY, "Discovering files", { rootDir, patterns: config.include.length });
+
 			// 1. Expand glob patterns
 			const allMatchedFiles = await this.applyGlobPatterns(
 				config.include,
@@ -74,6 +76,8 @@ export class FileDiscovery {
 			});
 		}
 
+		this.emitInfo(bus, PipelinePhase.DISCOVERY, "Discovery complete", { filesFound: result.files.length, filesSkipped: result.skipped.length });
+
 		return result;
 	}
 
@@ -90,6 +94,8 @@ export class FileDiscovery {
 			contents: [],
 			skipped: [],
 		};
+
+		this.emitInfo(bus, PipelinePhase.READ, "Reading files", { fileCount: files.length, maxFileSizeMb });
 
 		for (const filePath of files) {
 			try {
@@ -115,6 +121,7 @@ export class FileDiscovery {
 						path: filePath,
 						reason: SkipReason.TOO_LARGE,
 					});
+					this.emitWarn(bus, PipelinePhase.READ, "File skipped: exceeds size limit", { path: filePath, reason: "too_large", sizeMb: +sizeInMb.toFixed(2), maxFileSizeMb });
 					continue;
 				}
 
@@ -150,6 +157,8 @@ export class FileDiscovery {
 			}
 		}
 
+		this.emitInfo(bus, PipelinePhase.READ, "Read complete", { filesRead: result.contents.length, filesSkipped: result.skipped.length });
+
 		return result;
 	}
 
@@ -163,6 +172,26 @@ export class FileDiscovery {
 			code: error.code,
 			userMessage: error.userMessage,
 		} as ErrorEventPayload);
+	}
+
+	private emitWarn(bus: PipelineEventBus | undefined, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		bus?.emit({
+			type: PipelineEvent.WARN,
+			phase,
+			timestamp: Date.now(),
+			message,
+			context,
+		} as LogEventPayload);
+	}
+
+	private emitInfo(bus: PipelineEventBus | undefined, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		bus?.emit({
+			type: PipelineEvent.INFO,
+			phase,
+			timestamp: Date.now(),
+			message,
+			context,
+		} as LogEventPayload);
 	}
 
 	private validateConfig(
@@ -226,7 +255,7 @@ export class FileDiscovery {
 		let errorCount = 0;
 
 		for (const filePath of files) {
-			if (this.isSkipped(filePath, exclusionGlobs, result)) {
+			if (this.isSkipped(filePath, exclusionGlobs, result, bus)) {
 				continue;
 			}
 
@@ -244,6 +273,7 @@ export class FileDiscovery {
 		filePath: string,
 		exclusionGlobs: Glob[],
 		result: DiscoveredFiles,
+		bus?: PipelineEventBus,
 	): boolean {
 		// Check if it's markdown
 		if (extname(filePath).toLowerCase() !== ".md") {
@@ -251,6 +281,7 @@ export class FileDiscovery {
 				path: filePath,
 				reason: SkipReason.NOT_MARKDOWN,
 			});
+			this.emitWarn(bus, PipelinePhase.DISCOVERY, "File skipped: not a markdown file", { path: filePath, reason: "not_markdown" });
 			return true;
 		}
 
@@ -261,6 +292,7 @@ export class FileDiscovery {
 					path: filePath,
 					reason: SkipReason.EXCLUDED_PATTERN,
 				});
+				this.emitWarn(bus, PipelinePhase.DISCOVERY, "File skipped: matched exclusion pattern", { path: filePath, reason: "excluded_pattern" });
 				return true;
 			}
 		}
