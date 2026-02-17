@@ -1,11 +1,13 @@
 import { accessSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Glob } from "bun";
-import type { Logger, AppLogObj } from "@speckey/logger";
+import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
+import type { ErrorEventPayload } from "@speckey/event-bus";
+import { PipelinePhase } from "@speckey/constants";
 import {
 	type DiscoveredFiles,
 	type DiscoveryConfig,
-	type FileContent,
+	type DiscoveryError,
 	type FileContents,
 	SkipReason,
 } from "./types";
@@ -18,13 +20,14 @@ export class FileDiscovery {
 	/**
 	 * Discover files based on the provided configuration.
 	 */
-	public async discover(config: DiscoveryConfig, logger?: Logger<AppLogObj>): Promise<DiscoveredFiles> {
+	public async discover(config: DiscoveryConfig, bus?: PipelineEventBus): Promise<DiscoveredFiles> {
 		const result: DiscoveredFiles = {
 			files: [],
 			skipped: [],
-			errors: [],
 			exceededFileLimit: false,
 		};
+
+		let errorCount = 0;
 
 		try {
 			const rootDir = resolve(config.rootDir);
@@ -32,7 +35,7 @@ export class FileDiscovery {
 			// 0. Validate root path exists before scanning
 			const configError = this.validateConfig(rootDir, config.rootDir);
 			if (configError) {
-				result.errors.push(configError);
+				this.emitError(bus, PipelinePhase.DISCOVERY, configError);
 				return result;
 			}
 
@@ -43,11 +46,11 @@ export class FileDiscovery {
 			);
 
 			// 2. Filter and validate
-			await this.filterFiles(allMatchedFiles, config, result);
+			errorCount = await this.filterFiles(allMatchedFiles, config, result, bus);
 
 			// 3. Check for empty result
-			if (result.files.length === 0 && result.errors.length === 0) {
-				result.errors.push({
+			if (result.files.length === 0 && errorCount === 0) {
+				this.emitError(bus, PipelinePhase.DISCOVERY, {
 					path: config.rootDir,
 					message: "No markdown files found",
 					code: "EMPTY_DIRECTORY",
@@ -57,19 +60,13 @@ export class FileDiscovery {
 
 			// 4. Limit check
 			this.validateFileLimit(result, config.maxFiles);
-
-			logger?.info("Discovery complete", {
-				filesFound: result.files.length,
-				skipped: result.skipped.length,
-				errors: result.errors.length,
-			});
 		} catch (error: unknown) {
 			const message =
 				error instanceof Error
 					? error.message
 					: "Unknown error during discovery";
 			const code = (error as { code?: string })?.code || "UNKNOWN";
-			result.errors.push({
+			this.emitError(bus, PipelinePhase.DISCOVERY, {
 				path: config.rootDir,
 				message,
 				code,
@@ -80,10 +77,98 @@ export class FileDiscovery {
 		return result;
 	}
 
+	/**
+	 * Read file contents with validation.
+	 * Phase 1b: File Reading
+	 */
+	public async readFiles(
+		files: string[],
+		maxFileSizeMb: number = 10,
+		bus?: PipelineEventBus,
+	): Promise<FileContents> {
+		const result: FileContents = {
+			contents: [],
+			skipped: [],
+		};
+
+		for (const filePath of files) {
+			try {
+				const file = Bun.file(filePath);
+
+				// Check if file exists
+				if (!(await file.exists())) {
+					this.emitError(bus, PipelinePhase.READ, {
+						path: filePath,
+						message: "File does not exist",
+						code: "ENOENT",
+						userMessage: this.toUserMessage("ENOENT"),
+					});
+					continue;
+				}
+
+				// Phase 1b: Validate file size before reading
+				const sizeInBytes = file.size;
+				const sizeInMb = sizeInBytes / (1024 * 1024);
+
+				if (sizeInMb > maxFileSizeMb) {
+					result.skipped.push({
+						path: filePath,
+						reason: SkipReason.TOO_LARGE,
+					});
+					continue;
+				}
+
+				// Read file content
+				const content = await file.text();
+
+				// Validate UTF-8 encoding by checking for replacement character
+				// Bun.file().text() will replace invalid sequences with replacement char
+				if (content.includes("\uFFFD")) {
+					this.emitError(bus, PipelinePhase.READ, {
+						path: filePath,
+						message: "Invalid UTF-8 encoding",
+						code: "INVALID_ENCODING",
+						userMessage: this.toUserMessage("INVALID_ENCODING"),
+					});
+					continue;
+				}
+
+				result.contents.push({
+					path: filePath,
+					content,
+				});
+			} catch (error: unknown) {
+				const message =
+					error instanceof Error ? error.message : "Error reading file";
+				const code = (error as { code?: string })?.code || "EACCES";
+				this.emitError(bus, PipelinePhase.READ, {
+					path: filePath,
+					message,
+					code,
+					userMessage: this.toUserMessage(code),
+				});
+			}
+		}
+
+		return result;
+	}
+
+	private emitError(bus: PipelineEventBus | undefined, phase: PipelinePhase, error: DiscoveryError): void {
+		bus?.emit({
+			type: PipelineEvent.ERROR,
+			phase,
+			timestamp: Date.now(),
+			path: error.path,
+			message: error.message,
+			code: error.code,
+			userMessage: error.userMessage,
+		} as ErrorEventPayload);
+	}
+
 	private validateConfig(
 		rootDir: string,
 		originalPath: string,
-	): DiscoveredFiles["errors"][number] | null {
+	): DiscoveryError | null {
 		try {
 			accessSync(rootDir);
 		} catch {
@@ -135,16 +220,24 @@ export class FileDiscovery {
 		files: string[],
 		config: DiscoveryConfig,
 		result: DiscoveredFiles,
-	): Promise<void> {
+		bus?: PipelineEventBus,
+	): Promise<number> {
 		const exclusionGlobs = config.exclude.map((p) => new Glob(p));
+		let errorCount = 0;
 
 		for (const filePath of files) {
 			if (this.isSkipped(filePath, exclusionGlobs, result)) {
 				continue;
 			}
 
-			await this.validateAndIncludeFile(filePath, result);
+			const error = await this.validateAndIncludeFile(filePath, result);
+			if (error) {
+				this.emitError(bus, PipelinePhase.DISCOVERY, error);
+				errorCount++;
+			}
 		}
+
+		return errorCount;
 	}
 
 	private isSkipped(
@@ -178,116 +271,33 @@ export class FileDiscovery {
 	private async validateAndIncludeFile(
 		filePath: string,
 		result: DiscoveredFiles,
-	): Promise<void> {
+	): Promise<DiscoveryError | null> {
 		try {
 			const file = Bun.file(filePath);
 			if (!(await file.exists())) {
-				result.errors.push({
+				return {
 					path: filePath,
 					message: "File does not exist",
 					code: "ENOENT",
 					userMessage: this.toUserMessage("ENOENT"),
-				});
-				return;
+				};
 			}
 
 			// Phase 1: Only check file existence, not size
 			// Size validation happens in Phase 1b (readFiles)
 			result.files.push(filePath);
+			return null;
 		} catch (error: unknown) {
 			const message =
 				error instanceof Error ? error.message : "Error accessing file";
 			const code = (error as { code?: string })?.code || "EACCES";
-			result.errors.push({
+			return {
 				path: filePath,
 				message,
 				code,
 				userMessage: this.toUserMessage(code),
-			});
+			};
 		}
-	}
-
-	/**
-	 * Read file contents with validation.
-	 * Phase 1b: File Reading
-	 */
-	public async readFiles(
-		files: string[],
-		maxFileSizeMb: number = 10,
-		logger?: Logger<AppLogObj>,
-	): Promise<FileContents> {
-		const result: FileContents = {
-			contents: [],
-			skipped: [],
-			errors: [],
-		};
-
-		for (const filePath of files) {
-			try {
-				const file = Bun.file(filePath);
-
-				// Check if file exists
-				if (!(await file.exists())) {
-					result.errors.push({
-						path: filePath,
-						message: "File does not exist",
-						code: "ENOENT",
-						userMessage: this.toUserMessage("ENOENT"),
-					});
-					continue;
-				}
-
-				// Phase 1b: Validate file size before reading
-				const sizeInBytes = file.size;
-				const sizeInMb = sizeInBytes / (1024 * 1024);
-
-				if (sizeInMb > maxFileSizeMb) {
-					result.skipped.push({
-						path: filePath,
-						reason: SkipReason.TOO_LARGE,
-					});
-					continue;
-				}
-
-				// Read file content
-				const content = await file.text();
-
-				// Validate UTF-8 encoding by checking for replacement character
-				// Bun.file().text() will replace invalid sequences with replacement char
-				if (content.includes("\uFFFD")) {
-					result.errors.push({
-						path: filePath,
-						message: "Invalid UTF-8 encoding",
-						code: "INVALID_ENCODING",
-						userMessage: this.toUserMessage("INVALID_ENCODING"),
-					});
-					continue;
-				}
-
-				result.contents.push({
-					path: filePath,
-					content,
-				});
-			} catch (error: unknown) {
-				const message =
-					error instanceof Error ? error.message : "Error reading file";
-				const code = (error as { code?: string })?.code || "EACCES";
-				result.errors.push({
-					path: filePath,
-					message,
-					code,
-					userMessage: this.toUserMessage(code),
-				});
-			}
-		}
-
-		logger?.info("Read complete", {
-			filesRead: result.contents.length,
-			skipped: result.skipped.length,
-			errors: result.errors.length,
-		});
-
-		return result;
 	}
 
 	private validateFileLimit(
@@ -314,4 +324,3 @@ export class FileDiscovery {
 		}
 	}
 }
-

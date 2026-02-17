@@ -6,6 +6,6 @@
 	"types": "./src/file-discovery/index.ts",
 	"dependencies": {
 		"@speckey/constants": "workspace:*",
-		"@speckey/logger": "workspace:*"
+		"@speckey/event-bus": "workspace:*"
 	}
 }

@@ -4,20 +4,14 @@ import { join, resolve } from "node:path";
 import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
 import { DiscoveryErrors } from "@speckey/constants";
-import { Logger } from "@speckey/logger";
-import type { AppLogObj } from "@speckey/logger";
+import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
+import type { ErrorEventPayload } from "@speckey/event-bus";
 
-function createTestLogger() {
-	const logs: Record<string, unknown>[] = [];
-	const logger = new Logger<AppLogObj>({
-		name: "test-discovery",
-		type: "hidden",
-		minLevel: 0,
-	});
-	logger.attachTransport((logObj: Record<string, unknown>) => {
-		logs.push(logObj);
-	});
-	return { logger, logs };
+function createTestBus() {
+	const bus = new PipelineEventBus();
+	const errors: ErrorEventPayload[] = [];
+	bus.on(PipelineEvent.ERROR, (e) => errors.push(e as ErrorEventPayload));
+	return { bus, errors };
 }
 
 describe("FileDiscovery", () => {
@@ -87,7 +81,8 @@ describe("FileDiscovery", () => {
 			expect(result.files.some((f) => f.endsWith("spec2.md"))).toBe(true);
 		});
 
-		it("should return empty files for empty directory with error", async () => {
+		it("should emit error for empty directory", async () => {
+			const { bus, errors } = createTestBus();
 			const config = {
 				include: ["**/*.md"],
 				exclude: [],
@@ -96,14 +91,15 @@ describe("FileDiscovery", () => {
 				rootDir: join(testDir, "empty"),
 			};
 
-			const result = await discovery.discover(config);
+			const result = await discovery.discover(config, bus);
 
 			expect(result.files).toHaveLength(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
 		});
 
 		it("should handle non-existent directory", async () => {
+			const { bus, errors } = createTestBus();
 			const nonExistentPath = join(testDir, "non-existent-dir");
 			const config = {
 				include: ["**/*.md"],
@@ -113,12 +109,11 @@ describe("FileDiscovery", () => {
 				rootDir: nonExistentPath,
 			};
 
-			const result = await discovery.discover(config);
+			const result = await discovery.discover(config, bus);
 
-			// Should have empty files, may have error
 			expect(result.files).toHaveLength(0);
-			expect(result.errors.length).toBeGreaterThanOrEqual(1);
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
+			expect(errors.length).toBeGreaterThanOrEqual(1);
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should recursively discover files in nested subdirectories", async () => {
@@ -177,6 +172,7 @@ describe("FileDiscovery", () => {
 			// patterns like "[invalid". The INVALID_GLOB_SYNTAX catch in
 			// applyGlobPatterns() is a defensive guard. With current Bun, "[invalid"
 			// matches nothing, resulting in EMPTY_DIRECTORY.
+			const { bus, errors } = createTestBus();
 			const config = {
 				include: ["[invalid"],
 				exclude: [],
@@ -185,10 +181,10 @@ describe("FileDiscovery", () => {
 				rootDir: testDir,
 			};
 
-			const result = await discovery.discover(config);
+			const result = await discovery.discover(config, bus);
 
 			expect(result.files).toHaveLength(0);
-			expect(result.errors.length).toBeGreaterThanOrEqual(1);
+			expect(errors.length).toBeGreaterThanOrEqual(1);
 		});
 
 		it("should handle multiple glob patterns", async () => {
@@ -318,7 +314,8 @@ describe("FileDiscovery", () => {
 			expect(result.files.some((f) => f.endsWith("large.md"))).toBe(false);
 		});
 
-		it("should return error when all files are excluded by filters", async () => {
+		it("should emit error when all files are excluded by filters", async () => {
+			const { bus, errors } = createTestBus();
 			const config = {
 				include: ["**/*.md"],
 				exclude: ["**/*.md"],
@@ -327,12 +324,12 @@ describe("FileDiscovery", () => {
 				rootDir: testDir,
 			};
 
-			const result = await discovery.discover(config);
+			const result = await discovery.discover(config, bus);
 
 			expect(result.files).toHaveLength(0);
 			expect(result.skipped.some((s) => s.reason === SkipReason.EXCLUDED_PATTERN)).toBe(true);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
 		});
 	});
 
@@ -423,6 +420,7 @@ describe("FileDiscovery", () => {
 
 	describe("Error Handling", () => {
 		it("should handle discovery errors gracefully", async () => {
+			const { bus, errors } = createTestBus();
 			const config = {
 				include: ["**/*.md"],
 				exclude: [],
@@ -432,14 +430,15 @@ describe("FileDiscovery", () => {
 			};
 
 			// Should not throw
-			const result = await discovery.discover(config);
+			const result = await discovery.discover(config, bus);
 
 			expect(result.files).toHaveLength(0);
-			expect(result.errors.length).toBeGreaterThanOrEqual(1);
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
+			expect(errors.length).toBeGreaterThanOrEqual(1);
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
-		it("should report errors in result.errors", async () => {
+		it("should emit errors to bus", async () => {
+			const { bus, errors } = createTestBus();
 			// Create a directory structure, then remove it to force errors
 			const badDir = join(testDir, "will-be-removed");
 			await mkdir(badDir, { recursive: true });
@@ -454,8 +453,8 @@ describe("FileDiscovery", () => {
 			};
 
 			// Discovery should complete without throwing
-			const result = await discovery.discover(config);
-			expect(Array.isArray(result.errors)).toBe(true);
+			const result = await discovery.discover(config, bus);
+			expect(Array.isArray(errors)).toBe(true);
 
 			// Cleanup
 			await rm(badDir, { recursive: true, force: true });
@@ -551,7 +550,6 @@ describe("FileDiscovery", () => {
 			expect(result.contents).toHaveLength(1);
 			expect(result.contents[0]?.path).toContain("spec1.md");
 			expect(result.contents[0]?.content).toBe("# Spec 1");
-			expect(result.errors).toHaveLength(0);
 		});
 
 		it("should read multiple files successfully", async () => {
@@ -567,19 +565,20 @@ describe("FileDiscovery", () => {
 			const result = await discovery.readFiles(discovered.files);
 
 			expect(result.contents.length).toBeGreaterThanOrEqual(2);
-			expect(result.errors).toHaveLength(0);
 		});
 
-		it("should handle non-existent file", async () => {
-			const result = await discovery.readFiles(["/nonexistent/file.md"]);
+		it("should emit error for non-existent file", async () => {
+			const { bus, errors } = createTestBus();
+			const result = await discovery.readFiles(["/nonexistent/file.md"], 10, bus);
 
 			expect(result.contents).toHaveLength(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.code).toBe("ENOENT");
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.code).toBe("ENOENT");
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should handle file that vanishes between discover and read", async () => {
+			const { bus, errors } = createTestBus();
 			// Phase 1: Discover a real file
 			const tempFile = join(testDir, "vanishing.md");
 			await writeFile(tempFile, "# Will vanish");
@@ -598,26 +597,27 @@ describe("FileDiscovery", () => {
 			// Delete the file between discover and read
 			await rm(tempFile);
 
-			// Phase 1b: Read should report ENOENT, not throw
-			const result = await discovery.readFiles(discovered.files);
+			// Phase 1b: Read should emit ENOENT error, not throw
+			const result = await discovery.readFiles(discovered.files, 10, bus);
 
 			expect(result.contents).toHaveLength(0);
-			expect(result.errors).toHaveLength(1);
-			expect(result.errors[0]?.code).toBe("ENOENT");
-			expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.code).toBe("ENOENT");
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
 		});
 
 		it("should handle permission denied error", async () => {
+			const { bus, errors } = createTestBus();
 			const restrictedFile = join(testDir, "restricted.md");
 			await writeFile(restrictedFile, "# Restricted");
 			await chmod(restrictedFile, 0o000);
 
 			try {
 				const readableFile = join(testDir, "spec1.md");
-				const result = await discovery.readFiles([restrictedFile, readableFile]);
+				const result = await discovery.readFiles([restrictedFile, readableFile], 10, bus);
 
-				// Restricted file should produce an error
-				const restrictedError = result.errors.find((e) => e.path === restrictedFile);
+				// Restricted file should produce an error on the bus
+				const restrictedError = errors.find((e) => e.path === restrictedFile);
 				expect(restrictedError).toBeDefined();
 				expect(restrictedError?.userMessage).toBe(DiscoveryErrors.PERMISSION_DENIED);
 
@@ -631,13 +631,14 @@ describe("FileDiscovery", () => {
 		});
 
 		it("should handle file encoding error (invalid UTF-8)", async () => {
+			const { bus, errors } = createTestBus();
 			const invalidFile = join(testDir, "invalid-encoding.md");
 			const readableFile = join(testDir, "spec1.md");
 
-			const result = await discovery.readFiles([invalidFile, readableFile]);
+			const result = await discovery.readFiles([invalidFile, readableFile], 10, bus);
 
-			// Invalid encoding file should produce an error
-			const encodingError = result.errors.find((e) => e.path === invalidFile);
+			// Invalid encoding file should produce an error on the bus
+			const encodingError = errors.find((e) => e.path === invalidFile);
 			expect(encodingError).toBeDefined();
 			expect(encodingError?.code).toBe("INVALID_ENCODING");
 			expect(encodingError?.userMessage).toBe(DiscoveryErrors.INVALID_ENCODING);
@@ -666,33 +667,27 @@ describe("FileDiscovery", () => {
 	});
 
 	// ============================================================
-	// Feature: Logger Injection (4 scenarios)
+	// Feature: Event Bus Integration (4 scenarios)
 	// ============================================================
 
-	describe("Logger Injection", () => {
-		it("should log discovery progress when logger is provided", async () => {
-			const { logger, logs } = createTestLogger();
+	describe("Event Bus Integration", () => {
+		it("should emit errors to bus when provided during discover()", async () => {
+			const { bus, errors } = createTestBus();
 			const config = {
-				include: ["**/spec*.md"],
-				exclude: ["**/node_modules/**", "**/.git/**"],
+				include: ["**/*.md"],
+				exclude: [],
 				maxFiles: 100,
 				maxFileSizeMb: 10,
-				rootDir: testDir,
+				rootDir: "/nonexistent/path",
 			};
 
-			const result = await discovery.discover(config, logger);
+			await discovery.discover(config, bus);
 
-			expect(result.files.length).toBeGreaterThanOrEqual(3);
-			expect(logs.length).toBeGreaterThan(0);
-
-			// Should have a "Discovery complete" log entry with file count
-			const discoveryLog = logs.find(
-				(l) => typeof l["0"] === "string" && (l["0"] as string).includes("Discovery complete"),
-			);
-			expect(discoveryLog).toBeDefined();
+			expect(errors.length).toBeGreaterThanOrEqual(1);
+			expect(errors[0]?.code).toBe("ENOENT");
 		});
 
-		it("should operate silently when no logger is provided to discover()", async () => {
+		it("should operate without bus (no crash) for discover()", async () => {
 			const config = {
 				include: ["**/spec*.md"],
 				exclude: ["**/node_modules/**", "**/.git/**"],
@@ -701,37 +696,22 @@ describe("FileDiscovery", () => {
 				rootDir: testDir,
 			};
 
-			// Should not throw when logger is omitted
+			// Should not throw when bus is omitted
 			const result = await discovery.discover(config);
 
 			expect(result.files.length).toBeGreaterThanOrEqual(3);
-			expect(result.errors).toHaveLength(0);
 		});
 
-		it("should log read progress when logger is provided", async () => {
-			const { logger, logs } = createTestLogger();
-			const config = {
-				include: ["spec1.md"],
-				exclude: [],
-				maxFiles: 100,
-				maxFileSizeMb: 10,
-				rootDir: testDir,
-			};
+		it("should emit errors to bus when provided during readFiles()", async () => {
+			const { bus, errors } = createTestBus();
 
-			const discovered = await discovery.discover(config);
-			const result = await discovery.readFiles(discovered.files, 10, logger);
+			await discovery.readFiles(["/nonexistent/file.md"], 10, bus);
 
-			expect(result.contents).toHaveLength(1);
-			expect(logs.length).toBeGreaterThan(0);
-
-			// Should have a "Read complete" log entry with files read count
-			const readLog = logs.find(
-				(l) => typeof l["0"] === "string" && (l["0"] as string).includes("Read complete"),
-			);
-			expect(readLog).toBeDefined();
+			expect(errors.length).toBeGreaterThanOrEqual(1);
+			expect(errors[0]?.code).toBe("ENOENT");
 		});
 
-		it("should operate silently when no logger is provided to readFiles()", async () => {
+		it("should operate without bus (no crash) for readFiles()", async () => {
 			const config = {
 				include: ["spec1.md"],
 				exclude: [],
@@ -742,11 +722,10 @@ describe("FileDiscovery", () => {
 
 			const discovered = await discovery.discover(config);
 
-			// Should not throw when logger is omitted
+			// Should not throw when bus is omitted
 			const result = await discovery.readFiles(discovered.files, 10);
 
 			expect(result.contents).toHaveLength(1);
-			expect(result.errors).toHaveLength(0);
 		});
 	});
 });

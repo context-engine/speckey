@@ -39,10 +39,6 @@ export interface DiscoveredFiles {
 	 */
 	skipped: SkippedFile[];
 	/**
-	 * Errors encountered during discovery.
-	 */
-	errors: DiscoveryError[];
-	/**
 	 * True if file count exceeds the configured maxFiles limit.
 	 * The caller (CLI) should decide whether to prompt or abort.
 	 */
@@ -61,10 +57,6 @@ export interface FileContents {
 	 * Files that were skipped during reading (Phase 1b).
 	 */
 	skipped: SkippedFile[];
-	/**
-	 * Errors encountered during reading.
-	 */
-	errors: DiscoveryError[];
 }
 
 /**

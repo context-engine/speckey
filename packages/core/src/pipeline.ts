@@ -208,14 +208,7 @@ export class ParsePipeline {
                 exclude: config.exclude,
                 maxFiles: config.maxFiles,
                 maxFileSizeMb: config.maxFileSizeMb,
-            });
-
-            for (const err of result.errors) {
-                bus.emit({
-                    type: PipelineEvent.ERROR, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
-                    path: err.path, message: err.message, code: err.code, userMessage: err.userMessage,
-                } as ErrorEventPayload);
-            }
+            }, bus);
 
             allFiles.push(...result.files);
         }
@@ -240,14 +233,7 @@ export class ParsePipeline {
             message: "Reading files", context: { count: files.length },
         } as LogEventPayload);
 
-        const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb);
-
-        for (const err of result.errors) {
-            bus.emit({
-                type: PipelineEvent.ERROR, phase: PipelinePhase.READ, timestamp: Date.now(),
-                path: err.path, message: err.message, code: err.code, userMessage: err.userMessage,
-            } as ErrorEventPayload);
-        }
+        const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb, bus);
 
         bus.emit({
             type: PipelineEvent.INFO, phase: PipelinePhase.READ, timestamp: Date.now(),

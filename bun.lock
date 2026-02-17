@@ -110,7 +110,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@speckey/constants": "workspace:*",
-        "@speckey/logger": "workspace:*",
+        "@speckey/event-bus": "workspace:*",
       },
     },
     "packages/logger": {
