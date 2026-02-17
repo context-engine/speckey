@@ -412,4 +412,91 @@ describe("PipelineEventBus", () => {
 			expect(received[0].type).toBe(PipelineEvent.WARN);
 		});
 	});
+
+	// ─── Feature: Convenience Emit Methods ───
+
+	describe("Feature: Convenience Emit Methods", () => {
+		it("emitError should construct ErrorEventPayload and route to ERROR handlers", () => {
+			let received: PipelineEventPayload | undefined;
+			bus.on(PipelineEvent.ERROR, (e) => { received = e; });
+
+			bus.emitError("discovery", {
+				path: "/bad/file.md",
+				message: "Not found",
+				code: "ENOENT",
+				userMessage: ["File not found"],
+			});
+
+			expect(received).toBeDefined();
+			const err = received as ErrorEventPayload;
+			expect(err.type).toBe(PipelineEvent.ERROR);
+			expect(err.phase).toBe("discovery");
+			expect(err.path).toBe("/bad/file.md");
+			expect(err.message).toBe("Not found");
+			expect(err.code).toBe("ENOENT");
+			expect(err.userMessage).toEqual(["File not found"]);
+			expect(err.timestamp).toBeGreaterThan(0);
+		});
+
+		it("emitWarn should construct LogEventPayload with WARN type", () => {
+			let received: PipelineEventPayload | undefined;
+			bus.on(PipelineEvent.WARN, (e) => { received = e; });
+
+			bus.emitWarn("discovery", "File skipped", { path: "/a.txt", reason: "not_markdown" });
+
+			expect(received).toBeDefined();
+			const log = received as LogEventPayload;
+			expect(log.type).toBe(PipelineEvent.WARN);
+			expect(log.phase).toBe("discovery");
+			expect(log.message).toBe("File skipped");
+			expect(log.context).toEqual({ path: "/a.txt", reason: "not_markdown" });
+			expect(log.timestamp).toBeGreaterThan(0);
+		});
+
+		it("emitInfo should construct LogEventPayload with INFO type", () => {
+			let received: PipelineEventPayload | undefined;
+			bus.on(PipelineEvent.INFO, (e) => { received = e; });
+
+			bus.emitInfo("read", "Reading files", { fileCount: 5 });
+
+			expect(received).toBeDefined();
+			const log = received as LogEventPayload;
+			expect(log.type).toBe(PipelineEvent.INFO);
+			expect(log.phase).toBe("read");
+			expect(log.message).toBe("Reading files");
+			expect(log.context).toEqual({ fileCount: 5 });
+			expect(log.timestamp).toBeGreaterThan(0);
+		});
+
+		it("convenience methods should auto-generate timestamp", () => {
+			const before = Date.now();
+			const received: PipelineEventPayload[] = [];
+			bus.on(PipelineEvent.ERROR, (e) => received.push(e));
+			bus.on(PipelineEvent.WARN, (e) => received.push(e));
+			bus.on(PipelineEvent.INFO, (e) => received.push(e));
+
+			bus.emitError("discovery", { path: "/x", message: "err", code: "E", userMessage: ["e"] });
+			bus.emitWarn("discovery", "warn msg");
+			bus.emitInfo("discovery", "info msg");
+			const after = Date.now();
+
+			expect(received).toHaveLength(3);
+			for (const event of received) {
+				expect(event.timestamp).toBeGreaterThanOrEqual(before);
+				expect(event.timestamp).toBeLessThanOrEqual(after);
+			}
+		});
+
+		it("emitWarn should work without context parameter", () => {
+			let received: PipelineEventPayload | undefined;
+			bus.on(PipelineEvent.WARN, (e) => { received = e; });
+
+			bus.emitWarn("parse", "Something happened");
+
+			expect(received).toBeDefined();
+			const log = received as LogEventPayload;
+			expect(log.message).toBe("Something happened");
+			expect(log.context).toBeUndefined();
+		});
+	});
 });

@@ -1,8 +1,7 @@
 import { accessSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { Glob } from "bun";
-import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
-import type { ErrorEventPayload, LogEventPayload } from "@speckey/event-bus";
+import { PipelineEventBus } from "@speckey/event-bus";
 import { PipelinePhase } from "@speckey/constants";
 import {
 	type DiscoveredFiles,
@@ -35,11 +34,11 @@ export class FileDiscovery {
 			// 0. Validate root path exists before scanning
 			const configError = this.validateConfig(rootDir, config.rootDir);
 			if (configError) {
-				this.emitError(bus, PipelinePhase.DISCOVERY, configError);
+				bus?.emitError(PipelinePhase.DISCOVERY, configError);
 				return result;
 			}
 
-			this.emitInfo(bus, PipelinePhase.DISCOVERY, "Discovering files", { rootDir, patterns: config.include.length });
+			bus?.emitInfo(PipelinePhase.DISCOVERY, "Discovering files", { rootDir, patterns: config.include.length });
 
 			// 1. Expand glob patterns
 			const allMatchedFiles = await this.applyGlobPatterns(
@@ -52,7 +51,7 @@ export class FileDiscovery {
 
 			// 3. Check for empty result
 			if (result.files.length === 0 && errorCount === 0) {
-				this.emitError(bus, PipelinePhase.DISCOVERY, {
+				bus?.emitError(PipelinePhase.DISCOVERY, {
 					path: config.rootDir,
 					message: "No markdown files found",
 					code: "EMPTY_DIRECTORY",
@@ -68,7 +67,7 @@ export class FileDiscovery {
 					? error.message
 					: "Unknown error during discovery";
 			const code = (error as { code?: string })?.code || "UNKNOWN";
-			this.emitError(bus, PipelinePhase.DISCOVERY, {
+			bus?.emitError(PipelinePhase.DISCOVERY, {
 				path: config.rootDir,
 				message,
 				code,
@@ -76,7 +75,7 @@ export class FileDiscovery {
 			});
 		}
 
-		this.emitInfo(bus, PipelinePhase.DISCOVERY, "Discovery complete", { filesFound: result.files.length, filesSkipped: result.skipped.length });
+		bus?.emitInfo(PipelinePhase.DISCOVERY, "Discovery complete", { filesFound: result.files.length, filesSkipped: result.skipped.length });
 
 		return result;
 	}
@@ -95,7 +94,7 @@ export class FileDiscovery {
 			skipped: [],
 		};
 
-		this.emitInfo(bus, PipelinePhase.READ, "Reading files", { fileCount: files.length, maxFileSizeMb });
+		bus?.emitInfo(PipelinePhase.READ, "Reading files", { fileCount: files.length, maxFileSizeMb });
 
 		for (const filePath of files) {
 			try {
@@ -103,7 +102,7 @@ export class FileDiscovery {
 
 				// Check if file exists
 				if (!(await file.exists())) {
-					this.emitError(bus, PipelinePhase.READ, {
+					bus?.emitError(PipelinePhase.READ, {
 						path: filePath,
 						message: "File does not exist",
 						code: "ENOENT",
@@ -121,7 +120,7 @@ export class FileDiscovery {
 						path: filePath,
 						reason: SkipReason.TOO_LARGE,
 					});
-					this.emitWarn(bus, PipelinePhase.READ, "File skipped: exceeds size limit", { path: filePath, reason: "too_large", sizeMb: +sizeInMb.toFixed(2), maxFileSizeMb });
+					bus?.emitWarn(PipelinePhase.READ, "File skipped: exceeds size limit", { path: filePath, reason: "too_large", sizeMb: +sizeInMb.toFixed(2), maxFileSizeMb });
 					continue;
 				}
 
@@ -131,7 +130,7 @@ export class FileDiscovery {
 				// Validate UTF-8 encoding by checking for replacement character
 				// Bun.file().text() will replace invalid sequences with replacement char
 				if (content.includes("\uFFFD")) {
-					this.emitError(bus, PipelinePhase.READ, {
+					bus?.emitError(PipelinePhase.READ, {
 						path: filePath,
 						message: "Invalid UTF-8 encoding",
 						code: "INVALID_ENCODING",
@@ -148,7 +147,7 @@ export class FileDiscovery {
 				const message =
 					error instanceof Error ? error.message : "Error reading file";
 				const code = (error as { code?: string })?.code || "EACCES";
-				this.emitError(bus, PipelinePhase.READ, {
+				bus?.emitError(PipelinePhase.READ, {
 					path: filePath,
 					message,
 					code,
@@ -157,41 +156,9 @@ export class FileDiscovery {
 			}
 		}
 
-		this.emitInfo(bus, PipelinePhase.READ, "Read complete", { filesRead: result.contents.length, filesSkipped: result.skipped.length });
+		bus?.emitInfo(PipelinePhase.READ, "Read complete", { filesRead: result.contents.length, filesSkipped: result.skipped.length });
 
 		return result;
-	}
-
-	private emitError(bus: PipelineEventBus | undefined, phase: PipelinePhase, error: DiscoveryError): void {
-		bus?.emit({
-			type: PipelineEvent.ERROR,
-			phase,
-			timestamp: Date.now(),
-			path: error.path,
-			message: error.message,
-			code: error.code,
-			userMessage: error.userMessage,
-		} as ErrorEventPayload);
-	}
-
-	private emitWarn(bus: PipelineEventBus | undefined, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
-		bus?.emit({
-			type: PipelineEvent.WARN,
-			phase,
-			timestamp: Date.now(),
-			message,
-			context,
-		} as LogEventPayload);
-	}
-
-	private emitInfo(bus: PipelineEventBus | undefined, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
-		bus?.emit({
-			type: PipelineEvent.INFO,
-			phase,
-			timestamp: Date.now(),
-			message,
-			context,
-		} as LogEventPayload);
 	}
 
 	private validateConfig(
@@ -261,7 +228,7 @@ export class FileDiscovery {
 
 			const error = await this.validateAndIncludeFile(filePath, result);
 			if (error) {
-				this.emitError(bus, PipelinePhase.DISCOVERY, error);
+				bus?.emitError(PipelinePhase.DISCOVERY, error);
 				errorCount++;
 			}
 		}
@@ -281,7 +248,7 @@ export class FileDiscovery {
 				path: filePath,
 				reason: SkipReason.NOT_MARKDOWN,
 			});
-			this.emitWarn(bus, PipelinePhase.DISCOVERY, "File skipped: not a markdown file", { path: filePath, reason: "not_markdown" });
+			bus?.emitWarn(PipelinePhase.DISCOVERY, "File skipped: not a markdown file", { path: filePath, reason: "not_markdown" });
 			return true;
 		}
 
@@ -292,7 +259,7 @@ export class FileDiscovery {
 					path: filePath,
 					reason: SkipReason.EXCLUDED_PATTERN,
 				});
-				this.emitWarn(bus, PipelinePhase.DISCOVERY, "File skipped: matched exclusion pattern", { path: filePath, reason: "excluded_pattern" });
+				bus?.emitWarn(PipelinePhase.DISCOVERY, "File skipped: matched exclusion pattern", { path: filePath, reason: "excluded_pattern" });
 				return true;
 			}
 		}

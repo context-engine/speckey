@@ -1,4 +1,11 @@
-import type { EventHandler, PipelineEvent, PipelineEventPayload } from "./types";
+import { PipelinePhase } from "@speckey/constants";
+import {
+	PipelineEvent,
+	type ErrorEventPayload,
+	type EventHandler,
+	type LogEventPayload,
+	type PipelineEventPayload,
+} from "./types";
 
 /**
  * Routes typed events from producers to registered subscribers by event type.
@@ -41,5 +48,26 @@ export class PipelineEventBus {
 		if (index !== -1) {
 			list.splice(index, 1);
 		}
+	}
+
+	/**
+	 * Construct and emit an ERROR event with auto-generated timestamp.
+	 */
+	emitError(phase: PipelinePhase, error: Omit<ErrorEventPayload, "type" | "phase" | "timestamp">): void {
+		this.emit({ ...error, type: PipelineEvent.ERROR, phase, timestamp: Date.now() });
+	}
+
+	/**
+	 * Construct and emit a WARN event with auto-generated timestamp.
+	 */
+	emitWarn(phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		this.emit({ type: PipelineEvent.WARN, phase, timestamp: Date.now(), message, context } as LogEventPayload);
+	}
+
+	/**
+	 * Construct and emit an INFO event with auto-generated timestamp.
+	 */
+	emitInfo(phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		this.emit({ type: PipelineEvent.INFO, phase, timestamp: Date.now(), message, context } as LogEventPayload);
 	}
 }
