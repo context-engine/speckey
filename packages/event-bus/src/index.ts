@@ -1,9 +1,8 @@
 export {
-	PipelineEvent,
-	type PipelineEventPayload,
-	type ErrorEventPayload,
-	type LogEventPayload,
-	type PhaseEventPayload,
+	type BusPayload,
+	type ErrorPayload,
+	type LogPayload,
+	type PhasePayload,
 	type EventHandler,
 } from "./types";
 

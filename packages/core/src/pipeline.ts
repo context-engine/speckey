@@ -7,9 +7,9 @@ import {
 } from "@speckey/parser";
 import type { ExtractionResult, RoutedDiagrams, ValidatedMermaidBlock } from "@speckey/parser";
 import type { Logger, AppLogObj } from "@speckey/logger";
-import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
-import type { ErrorEventPayload, LogEventPayload, PhaseEventPayload } from "@speckey/event-bus";
-import { PipelinePhase } from "@speckey/constants";
+import { PipelineEventBus } from "@speckey/event-bus";
+import type { PhasePayload } from "@speckey/event-bus";
+import { LogLevel, PipelinePhase, PhaseEvent, IoEvent, ParserEvent } from "@speckey/constants";
 import { LogSubscriber } from "./log-subscriber";
 import { ErrorSubscriber } from "./error-subscriber";
 import {
@@ -71,14 +71,11 @@ export class ParsePipeline {
         // Per-run event bus and subscribers
         const bus = new PipelineEventBus();
         const errSub = new ErrorSubscriber();
-        bus.on(PipelineEvent.ERROR, errSub.handle.bind(errSub));
+        bus.onLevel(LogLevel.ERROR, errSub.handle.bind(errSub));
 
         if (logger) {
             const logSub = new LogSubscriber(logger);
-            const boundHandle = logSub.handle.bind(logSub);
-            for (const type of Object.values(PipelineEvent)) {
-                bus.on(type, boundHandle);
-            }
+            bus.onAll(logSub.handle.bind(logSub));
         }
 
         // --- Phase 3a+ run variables (gated) ---
@@ -96,22 +93,22 @@ export class ParsePipeline {
         };
 
         // Phase 1: Discover + Read
-        bus.emit({ type: PipelineEvent.PHASE_START, phase: PipelinePhase.DISCOVERY, timestamp: Date.now() } as PhaseEventPayload);
+        bus.emit({ event: PhaseEvent.PHASE_START, level: LogLevel.INFO, phase: PipelinePhase.DISCOVERY, timestamp: Date.now() } as PhasePayload);
 
         const discoveredFiles = await this.discover(config.paths, resolvedConfig, bus);
         const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, bus);
 
-        bus.emit({ type: PipelineEvent.PHASE_END, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
-            stats: { filesFound: discoveredFiles.length, filesRead: fileContents.length } } as PhaseEventPayload);
+        bus.emit({ event: PhaseEvent.PHASE_END, level: LogLevel.INFO, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
+            stats: { filesFound: discoveredFiles.length, filesRead: fileContents.length } } as PhasePayload);
 
         // Phase 2: Extract + Validate
-        bus.emit({ type: PipelineEvent.PHASE_START, phase: PipelinePhase.PARSE, timestamp: Date.now() } as PhaseEventPayload);
+        bus.emit({ event: PhaseEvent.PHASE_START, level: LogLevel.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now() } as PhasePayload);
 
         const extractedFiles = this.extractMarkdown(fileContents, bus);
         const { parsedFiles, routedDiagrams, blocksExtracted } = await this.validateMermaid(extractedFiles, bus);
 
-        bus.emit({ type: PipelineEvent.PHASE_END, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-            stats: { filesParsed: parsedFiles.length, blocksExtracted } } as PhaseEventPayload);
+        bus.emit({ event: PhaseEvent.PHASE_END, level: LogLevel.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now(),
+            stats: { filesParsed: parsedFiles.length, blocksExtracted } } as PhasePayload);
 
         // --- PHASE GATE: early return while verifying components incrementally ---
         // Move this return past each phase as it is verified.
@@ -197,10 +194,7 @@ export class ParsePipeline {
         const allFiles: string[] = [];
 
         for (const rootDir of paths) {
-            bus.emit({
-                type: PipelineEvent.DEBUG, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
-                message: "Discovering files", context: { rootDir },
-            } as LogEventPayload);
+            bus.emitDebug(IoEvent.FILE_DISCOVERY, PipelinePhase.DISCOVERY, "Discovering files", { rootDir });
 
             const result = await this.fileDiscovery.discover({
                 rootDir,
@@ -213,10 +207,7 @@ export class ParsePipeline {
             allFiles.push(...result.files);
         }
 
-        bus.emit({
-            type: PipelineEvent.INFO, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
-            message: "Discovery complete", context: { filesFound: allFiles.length },
-        } as LogEventPayload);
+        bus.emitInfo(IoEvent.FILE_DISCOVERY, PipelinePhase.DISCOVERY, "Discovery complete", { filesFound: allFiles.length });
         return allFiles;
     }
 
@@ -228,17 +219,11 @@ export class ParsePipeline {
         maxFileSizeMb: number,
         bus: PipelineEventBus,
     ): Promise<{ path: string; content: string }[]> {
-        bus.emit({
-            type: PipelineEvent.DEBUG, phase: PipelinePhase.READ, timestamp: Date.now(),
-            message: "Reading files", context: { count: files.length },
-        } as LogEventPayload);
+        bus.emitDebug(IoEvent.FILE_READ, PipelinePhase.READ, "Reading files", { count: files.length });
 
         const result = await this.fileDiscovery.readFiles(files, maxFileSizeMb, bus);
 
-        bus.emit({
-            type: PipelineEvent.INFO, phase: PipelinePhase.READ, timestamp: Date.now(),
-            message: "Read complete", context: { filesRead: result.contents.length },
-        } as LogEventPayload);
+        bus.emitInfo(IoEvent.FILE_READ, PipelinePhase.READ, "Read complete", { filesRead: result.contents.length });
         return result.contents;
     }
 
@@ -253,20 +238,16 @@ export class ParsePipeline {
         const results: ExtractionResult[] = [];
 
         for (const file of contents) {
-            bus.emit({
-                type: PipelineEvent.DEBUG, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-                message: "Parsing file", context: { file: file.path },
-            } as LogEventPayload);
+            bus.emitDebug(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, "Parsing file", { file: file.path });
 
             const extractionResult = this.markdownParser.parse(file.content, file.path);
 
             const extractionErrors = extractionResult.errors.filter(e => e.severity === ErrorSeverity.ERROR);
             if (extractionErrors.length > 0) {
                 for (const err of extractionErrors) {
-                    bus.emit({
-                        type: PipelineEvent.ERROR, phase: PipelinePhase.PARSE, timestamp: Date.now(),
+                    bus.emitError(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, {
                         path: file.path, message: err.message, code: `LINE_${err.line}`, userMessage: [err.message],
-                    } as ErrorEventPayload);
+                    });
                 }
                 continue;
             }
@@ -274,10 +255,7 @@ export class ParsePipeline {
             results.push(extractionResult);
         }
 
-        bus.emit({
-            type: PipelineEvent.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-            message: "Extraction complete", context: { filesExtracted: results.length },
-        } as LogEventPayload);
+        bus.emitInfo(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, "Extraction complete", { filesExtracted: results.length });
         return results;
     }
 
@@ -300,24 +278,17 @@ export class ParsePipeline {
                 (sum, blocks) => sum + blocks.length, 0,
             );
             if (mermaidBlocks.length === 0 && allBlockCount > 0) {
-                bus.emit({
-                    type: PipelineEvent.WARN, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-                    message: "File has code blocks but none are mermaid", context: { file: extraction.specFile },
-                } as LogEventPayload);
+                bus.emitWarn(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, "File has code blocks but none are mermaid", { file: extraction.specFile });
             } else if (mermaidBlocks.length === 0) {
-                bus.emit({
-                    type: PipelineEvent.WARN, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-                    message: "No mermaid diagrams found in file", context: { file: extraction.specFile },
-                } as LogEventPayload);
+                bus.emitWarn(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, "No mermaid diagrams found in file", { file: extraction.specFile });
             }
 
             const validationResult = await this.mermaidValidator.validateAll(mermaidBlocks, extraction.specFile);
 
             for (const err of validationResult.errors.filter(e => e.severity === ErrorSeverity.ERROR)) {
-                bus.emit({
-                    type: PipelineEvent.ERROR, phase: PipelinePhase.PARSE, timestamp: Date.now(),
+                bus.emitError(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, {
                     path: extraction.specFile, message: err.message, code: `LINE_${err.line}`, userMessage: [err.message],
-                } as ErrorEventPayload);
+                });
             }
 
             parsedFiles.push({
@@ -332,10 +303,7 @@ export class ParsePipeline {
 
         const routedDiagrams = this.diagramRouter.routeByDiagramType(allValidatedBlocks);
 
-        bus.emit({
-            type: PipelineEvent.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-            message: "Parse complete", context: { filesParsed: parsedFiles.length, blocksExtracted },
-        } as LogEventPayload);
+        bus.emitInfo(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, "Parse complete", { filesParsed: parsedFiles.length, blocksExtracted });
         return { parsedFiles, routedDiagrams, blocksExtracted };
     }
 }

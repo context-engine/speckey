@@ -1,21 +1,16 @@
 import type { Logger, AppLogObj } from "@speckey/logger";
-import {
-	PipelineEvent,
-	type PipelineEventPayload,
-	type ErrorEventPayload,
-	type LogEventPayload,
-	type PhaseEventPayload,
-} from "@speckey/event-bus";
+import { LogLevel } from "@speckey/constants";
+import type { BusPayload, ErrorPayload, LogPayload, PhasePayload } from "@speckey/event-bus";
 
 /**
- * Subscribes to all event types and routes them to the appropriate Logger method.
+ * Subscribes to all payloads via bus.onAll() and routes them to the
+ * appropriate Logger method based on payload level.
  *
  * Routing:
  *   ERROR, WARN  → logger.warn()
  *   INFO         → logger.info()
  *   DEBUG        → logger.debug()
- *   PHASE_START  → logger.info()
- *   PHASE_END    → logger.info()
+ *   PhasePayload → logger.info() (with phase start/end formatting)
  */
 export class LogSubscriber {
 	private readonly logger: Logger<AppLogObj>;
@@ -24,40 +19,41 @@ export class LogSubscriber {
 		this.logger = logger;
 	}
 
-	handle(event: PipelineEventPayload): void {
+	handle(event: BusPayload): void {
 		this.routeToLogger(event);
 	}
 
-	private routeToLogger(event: PipelineEventPayload): void {
-		switch (event.type) {
-			case PipelineEvent.ERROR: {
-				const e = event as ErrorEventPayload;
+	private routeToLogger(event: BusPayload): void {
+		// PhasePayload gets special formatting
+		if ("stats" in event || event.event === "PHASE_START" || event.event === "PHASE_END") {
+			const e = event as PhasePayload;
+			if (event.event === "PHASE_START") {
+				this.logger.info(`Phase "${e.phase}" started`, { phase: e.phase, ...e.stats });
+			} else {
+				this.logger.info(`Phase "${e.phase}" ended`, { phase: e.phase, ...e.stats });
+			}
+			return;
+		}
+
+		switch (event.level) {
+			case LogLevel.ERROR: {
+				const e = event as ErrorPayload;
 				this.logger.warn(e.message, { phase: e.phase, path: e.path, code: e.code });
 				break;
 			}
-			case PipelineEvent.WARN: {
-				const e = event as LogEventPayload;
+			case LogLevel.WARN: {
+				const e = event as LogPayload;
 				this.logger.warn(e.message, { phase: e.phase, ...e.context });
 				break;
 			}
-			case PipelineEvent.INFO: {
-				const e = event as LogEventPayload;
+			case LogLevel.INFO: {
+				const e = event as LogPayload;
 				this.logger.info(e.message, { phase: e.phase, ...e.context });
 				break;
 			}
-			case PipelineEvent.DEBUG: {
-				const e = event as LogEventPayload;
+			case LogLevel.DEBUG: {
+				const e = event as LogPayload;
 				this.logger.debug(e.message, { phase: e.phase, ...e.context });
-				break;
-			}
-			case PipelineEvent.PHASE_START: {
-				const e = event as PhaseEventPayload;
-				this.logger.info(`Phase "${e.phase}" started`, { phase: e.phase, ...e.stats });
-				break;
-			}
-			case PipelineEvent.PHASE_END: {
-				const e = event as PhaseEventPayload;
-				this.logger.info(`Phase "${e.phase}" ended`, { phase: e.phase, ...e.stats });
 				break;
 			}
 		}

@@ -4,17 +4,18 @@ import { join, resolve } from "node:path";
 import { FileDiscovery } from "../../src/file-discovery/discovery";
 import { SkipReason } from "../../src/file-discovery/types";
 import { DiscoveryErrors } from "@speckey/constants";
-import { PipelineEventBus, PipelineEvent } from "@speckey/event-bus";
-import type { ErrorEventPayload, LogEventPayload } from "@speckey/event-bus";
+import { PipelineEventBus } from "@speckey/event-bus";
+import type { ErrorPayload, LogPayload } from "@speckey/event-bus";
+import { LogLevel } from "@speckey/constants";
 
 function createTestBus() {
 	const bus = new PipelineEventBus();
-	const errors: ErrorEventPayload[] = [];
-	const warnings: LogEventPayload[] = [];
-	const infos: LogEventPayload[] = [];
-	bus.on(PipelineEvent.ERROR, (e) => errors.push(e as ErrorEventPayload));
-	bus.on(PipelineEvent.WARN, (e) => warnings.push(e as LogEventPayload));
-	bus.on(PipelineEvent.INFO, (e) => infos.push(e as LogEventPayload));
+	const errors: ErrorPayload[] = [];
+	const warnings: LogPayload[] = [];
+	const infos: LogPayload[] = [];
+	bus.onLevel(LogLevel.ERROR, (e) => errors.push(e as ErrorPayload));
+	bus.onLevel(LogLevel.WARN, (e) => warnings.push(e as LogPayload));
+	bus.onLevel(LogLevel.INFO, (e) => infos.push(e as LogPayload));
 	return { bus, errors, warnings, infos };
 }
 

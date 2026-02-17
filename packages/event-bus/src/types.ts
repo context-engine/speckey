@@ -1,31 +1,21 @@
-import type { PipelinePhase, UserErrorMessage } from "@speckey/constants";
+import type { LogLevel, PipelineEvent, PhaseEvent, PipelinePhase, UserErrorMessage } from "@speckey/constants";
 
 /**
- * Classifies the kind of event emitted during pipeline execution.
+ * Base interface for all payloads emitted through the pipeline event bus.
+ * Every payload carries two orthogonal dimensions: event (what happened) and level (severity).
  */
-export enum PipelineEvent {
-	ERROR = "ERROR",
-	WARN = "WARN",
-	INFO = "INFO",
-	DEBUG = "DEBUG",
-	PHASE_START = "PHASE_START",
-	PHASE_END = "PHASE_END",
-}
-
-/**
- * Base interface for all events emitted through the pipeline event bus.
- */
-export interface PipelineEventPayload {
-	type: PipelineEvent;
+export interface BusPayload {
+	event: PipelineEvent;
+	level: LogLevel;
 	phase: PipelinePhase;
 	timestamp: number;
 }
 
 /**
- * Payload for ERROR events — represents a pipeline error with user-facing message.
+ * Payload for ERROR-level events — represents a pipeline error with user-facing message.
  */
-export interface ErrorEventPayload extends PipelineEventPayload {
-	type: PipelineEvent.ERROR;
+export interface ErrorPayload extends BusPayload {
+	level: LogLevel.ERROR;
 	path: string;
 	message: string;
 	code: string;
@@ -33,23 +23,24 @@ export interface ErrorEventPayload extends PipelineEventPayload {
 }
 
 /**
- * Payload for WARN, INFO, and DEBUG events — carries a log message with optional context.
+ * Payload for WARN, INFO, and DEBUG-level events — carries a log message with optional context.
  */
-export interface LogEventPayload extends PipelineEventPayload {
-	type: PipelineEvent.WARN | PipelineEvent.INFO | PipelineEvent.DEBUG;
+export interface LogPayload extends BusPayload {
+	level: LogLevel.WARN | LogLevel.INFO | LogLevel.DEBUG;
 	message: string;
 	context?: Record<string, unknown>;
 }
 
 /**
- * Payload for PHASE_START and PHASE_END events — marks phase boundaries.
+ * Payload for phase boundary events — marks PHASE_START and PHASE_END.
  */
-export interface PhaseEventPayload extends PipelineEventPayload {
-	type: PipelineEvent.PHASE_START | PipelineEvent.PHASE_END;
+export interface PhasePayload extends BusPayload {
+	event: PhaseEvent;
+	level: LogLevel.INFO;
 	stats?: Record<string, number>;
 }
 
 /**
  * Callback type for event subscribers.
  */
-export type EventHandler = (event: PipelineEventPayload) => void;
+export type EventHandler = (event: BusPayload) => void;

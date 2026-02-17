@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Logger, type AppLogObj } from "@speckey/logger";
 import {
-	PipelineEvent,
-	type ErrorEventPayload,
-	type LogEventPayload,
-	type PhaseEventPayload,
+	LogLevel,
+	IoEvent,
+	ParserEvent,
+	PhaseEvent,
+	GenericEvent,
+	PipelinePhase,
+} from "@speckey/constants";
+import {
+	type BusPayload,
+	type ErrorPayload,
+	type LogPayload,
+	type PhasePayload,
 } from "@speckey/event-bus";
 import { LogSubscriber } from "../src/log-subscriber";
 
@@ -23,10 +31,11 @@ function createTestLogger() {
 	return { logger, logs };
 }
 
-function makeErrorEvent(overrides: Partial<ErrorEventPayload> = {}): ErrorEventPayload {
+function makeErrorPayload(overrides: Partial<ErrorPayload> = {}): ErrorPayload {
 	return {
-		type: PipelineEvent.ERROR,
-		phase: "discovery",
+		event: IoEvent.FILE_DISCOVERY,
+		level: LogLevel.ERROR,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
 		path: "/some/file.md",
 		message: "Path not found",
@@ -36,26 +45,28 @@ function makeErrorEvent(overrides: Partial<ErrorEventPayload> = {}): ErrorEventP
 	};
 }
 
-function makeLogEvent(
-	type: PipelineEvent.WARN | PipelineEvent.INFO | PipelineEvent.DEBUG,
-	overrides: Partial<LogEventPayload> = {},
-): LogEventPayload {
+function makeLogPayload(
+	level: LogLevel.WARN | LogLevel.INFO | LogLevel.DEBUG = LogLevel.INFO,
+	overrides: Partial<LogPayload> = {},
+): LogPayload {
 	return {
-		type,
-		phase: "discovery",
+		event: IoEvent.FILE_DISCOVERY,
+		level,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
-		message: `Test ${type} message`,
+		message: `Test ${level} message`,
 		...overrides,
 	};
 }
 
-function makePhaseEvent(
-	type: PipelineEvent.PHASE_START | PipelineEvent.PHASE_END,
-	overrides: Partial<PhaseEventPayload> = {},
-): PhaseEventPayload {
+function makePhasePayload(
+	event: PhaseEvent.PHASE_START | PhaseEvent.PHASE_END = PhaseEvent.PHASE_START,
+	overrides: Partial<PhasePayload> = {},
+): PhasePayload {
 	return {
-		type,
-		phase: "discovery",
+		event,
+		level: LogLevel.INFO,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
 		...overrides,
 	};
@@ -73,88 +84,86 @@ describe("LogSubscriber", () => {
 		subscriber = new LogSubscriber(logger);
 	});
 
-	// ─── Feature: LogSubscriber Routing (ST.7) ───
+	// ─── Feature: Level-Based Routing ───
 
-	describe("Feature: Event Routing", () => {
-		it("should route ERROR events to logger.warn", () => {
-			const event = makeErrorEvent({
-				phase: "read",
+	describe("Feature: Level-Based Routing", () => {
+		it("should route ERROR-level payloads to logger.warn", () => {
+			const payload = makeErrorPayload({
+				phase: PipelinePhase.READ,
 				message: "Permission denied",
 				code: "EACCES",
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const lastLog = logs[logs.length - 1];
-			// logger.warn produces logLevelId 4
 			expect(lastLog?.["_meta"]).toBeDefined();
-			// The log should contain the error message
 			const logStr = JSON.stringify(lastLog);
 			expect(logStr).toContain("Permission denied");
 		});
 
-		it("should route WARN events to logger.warn", () => {
-			const event = makeLogEvent(PipelineEvent.WARN, {
-				phase: "discovery",
+		it("should route WARN-level payloads to logger.warn", () => {
+			const payload = makeLogPayload(LogLevel.WARN, {
+				phase: PipelinePhase.DISCOVERY,
 				message: "File count exceeds maxFiles",
 				context: { count: 15000, max: 10000 },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("File count exceeds maxFiles");
 		});
 
-		it("should route INFO events to logger.info", () => {
-			const event = makeLogEvent(PipelineEvent.INFO, {
-				phase: "discovery",
+		it("should route INFO-level payloads to logger.info", () => {
+			const payload = makeLogPayload(LogLevel.INFO, {
+				phase: PipelinePhase.DISCOVERY,
 				message: "Discovery complete",
 				context: { filesFound: 42 },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("Discovery complete");
 		});
 
-		it("should route DEBUG events to logger.debug", () => {
-			const event = makeLogEvent(PipelineEvent.DEBUG, {
-				phase: "read",
+		it("should route DEBUG-level payloads to logger.debug", () => {
+			const payload = makeLogPayload(LogLevel.DEBUG, {
+				phase: PipelinePhase.READ,
 				message: "Reading file",
 				context: { path: "/some/file.md" },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("Reading file");
 		});
 
-		it("should route PHASE_START events to logger.info", () => {
-			const event = makePhaseEvent(PipelineEvent.PHASE_START, {
-				phase: "parse",
+		it("should route PhasePayload (PHASE_START) to logger.info", () => {
+			const payload = makePhasePayload(PhaseEvent.PHASE_START, {
+				phase: PipelinePhase.PARSE,
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("parse");
 		});
 
-		it("should route PHASE_END events to logger.info", () => {
-			const event = makePhaseEvent(PipelineEvent.PHASE_END, {
-				phase: "discovery",
+		it("should route PhasePayload (PHASE_END) to logger.info", () => {
+			const payload = makePhasePayload(PhaseEvent.PHASE_END, {
+				phase: PipelinePhase.DISCOVERY,
 				stats: { filesFound: 10 },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const logStr = JSON.stringify(logs[logs.length - 1]);
@@ -162,78 +171,86 @@ describe("LogSubscriber", () => {
 		});
 	});
 
-	// ─── Feature: All 6 Event Types Handled ───
+	// ─── Feature: Complete Coverage ───
 
-	describe("Feature: Complete Event Type Coverage", () => {
-		it("should handle all 6 event types without throwing", () => {
-			const events = [
-				makeErrorEvent(),
-				makeLogEvent(PipelineEvent.WARN),
-				makeLogEvent(PipelineEvent.INFO),
-				makeLogEvent(PipelineEvent.DEBUG),
-				makePhaseEvent(PipelineEvent.PHASE_START),
-				makePhaseEvent(PipelineEvent.PHASE_END),
+	describe("Feature: Complete Payload Type Coverage", () => {
+		it("should handle all payload types without throwing", () => {
+			const payloads: BusPayload[] = [
+				makeErrorPayload(),
+				makeLogPayload(LogLevel.WARN),
+				makeLogPayload(LogLevel.INFO),
+				makeLogPayload(LogLevel.DEBUG),
+				makePhasePayload(PhaseEvent.PHASE_START),
+				makePhasePayload(PhaseEvent.PHASE_END),
 			];
 
-			for (const event of events) {
-				expect(() => subscriber.handle(event)).not.toThrow();
+			for (const payload of payloads) {
+				expect(() => subscriber.handle(payload)).not.toThrow();
 			}
 
-			// All 6 events should have produced log entries
+			// All 6 payloads should have produced log entries
 			expect(logs.length).toBe(6);
 		});
 
 		it("should include phase in all log entries", () => {
-			subscriber.handle(makeErrorEvent({ phase: "build" }));
-			subscriber.handle(makeLogEvent(PipelineEvent.INFO, { phase: "parse" }));
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_START, { phase: "write" }));
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.BUILD }));
+			subscriber.handle(makeLogPayload(LogLevel.INFO, { phase: PipelinePhase.PARSE }));
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START, { phase: PipelinePhase.WRITE }));
 
 			for (const log of logs) {
 				const logStr = JSON.stringify(log);
-				// Each log should contain its respective phase
 				expect(
 					logStr.includes("build") || logStr.includes("parse") || logStr.includes("write"),
 				).toBe(true);
 			}
+		});
+
+		it("should handle payloads from different event types", () => {
+			subscriber.handle(makeErrorPayload({ event: IoEvent.FILE_DISCOVERY }));
+			subscriber.handle(makeLogPayload(LogLevel.WARN, { event: IoEvent.FILE_READ }));
+			subscriber.handle(makeLogPayload(LogLevel.DEBUG, { event: ParserEvent.MERMAID_VALIDATION }));
+			subscriber.handle(makeLogPayload(LogLevel.DEBUG, { event: GenericEvent.LOG }));
+
+			expect(logs.length).toBe(4);
 		});
 	});
 
 	// ─── Feature: Context Forwarding ───
 
 	describe("Feature: Context Forwarding", () => {
-		it("should forward ErrorEventPayload fields as context", () => {
-			const event = makeErrorEvent({
+		it("should forward ErrorPayload fields as context", () => {
+			const payload = makeErrorPayload({
 				path: "/test/spec.md",
 				code: "PARSE_FAILURE",
 				message: "Unexpected token",
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("PARSE_FAILURE");
 			expect(logStr).toContain("/test/spec.md");
 		});
 
-		it("should forward LogEventPayload context", () => {
-			const event = makeLogEvent(PipelineEvent.INFO, {
+		it("should forward LogPayload context", () => {
+			const payload = makeLogPayload(LogLevel.INFO, {
 				message: "Files processed",
 				context: { count: 5, skipped: 2 },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("Files processed");
 		});
 
-		it("should forward PhaseEventPayload stats", () => {
-			const event = makePhaseEvent(PipelineEvent.PHASE_END, {
-				phase: "discovery",
+		it("should forward PhasePayload stats", () => {
+			const payload = makePhasePayload(PhaseEvent.PHASE_END, {
+				phase: PipelinePhase.DISCOVERY,
 				stats: { filesFound: 42, errorsCount: 1 },
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			const logStr = JSON.stringify(logs[logs.length - 1]);
 			expect(logStr).toContain("42");

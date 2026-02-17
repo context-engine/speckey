@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Logger, type AppLogObj } from "@speckey/logger";
-import { PipelineEvent } from "@speckey/event-bus";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
 

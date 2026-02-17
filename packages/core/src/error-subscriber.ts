@@ -1,10 +1,13 @@
-import { PipelineEvent, type PipelineEventPayload, type ErrorEventPayload } from "@speckey/event-bus";
+import { LogLevel } from "@speckey/constants";
+import type { BusPayload, ErrorPayload } from "@speckey/event-bus";
 import type { PipelineError } from "./types";
 
 /**
- * Subscribes to ERROR events only and accumulates them as PipelineError[].
+ * Subscribes to ERROR-level payloads via bus.onLevel(LogLevel.ERROR) and
+ * accumulates them as PipelineError[].
  *
- * Non-ERROR events (WARN, INFO, DEBUG, PHASE_START, PHASE_END) are ignored.
+ * The bus guarantees only ERROR-level payloads are delivered. A defensive
+ * level check is retained for safety.
  */
 export class ErrorSubscriber {
 	readonly errors: PipelineError[] = [];
@@ -13,12 +16,12 @@ export class ErrorSubscriber {
 		return this.errors.length;
 	}
 
-	handle(event: PipelineEventPayload): void {
-		if (event.type !== PipelineEvent.ERROR) {
+	handle(event: BusPayload): void {
+		if (event.level !== LogLevel.ERROR) {
 			return;
 		}
 
-		const e = event as ErrorEventPayload;
+		const e = event as ErrorPayload;
 		this.errors.push({
 			phase: e.phase,
 			path: e.path,

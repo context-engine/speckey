@@ -1,48 +1,56 @@
-import { PipelinePhase } from "@speckey/constants";
-import {
-	PipelineEvent,
-	type ErrorEventPayload,
-	type EventHandler,
-	type LogEventPayload,
-	type PipelineEventPayload,
-} from "./types";
+import { LogLevel, type PipelineEvent, type PipelinePhase } from "@speckey/constants";
+import type { BusPayload, ErrorPayload, EventHandler, LogPayload } from "./types";
 
 /**
- * Routes typed events from producers to registered subscribers by event type.
+ * Routes typed payloads from producers to registered subscribers via three
+ * independent channels: by log level, by event type, and broadcast.
  *
  * @address speckey.eventBus#class.PipelineEventBus
  */
 export class PipelineEventBus {
-	private handlers = new Map<PipelineEvent, EventHandler[]>();
+	private levelHandlers = new Map<LogLevel, EventHandler[]>();
+	private eventHandlers = new Map<PipelineEvent, EventHandler[]>();
+	private allHandlers: EventHandler[] = [];
 
 	/**
-	 * Deliver event synchronously to all handlers registered for its type.
+	 * Deliver payload synchronously to all matching handlers across all three channels:
+	 * 1. Level channel — handlers registered for the payload's level
+	 * 2. Event channel — handlers registered for the payload's event type
+	 * 3. Broadcast channel — handlers registered via onAll()
 	 */
-	emit(event: PipelineEventPayload): void {
-		const list = this.handlers.get(event.type);
-		if (!list) return;
-		for (const handler of list) {
-			handler(event);
+	emit(payload: BusPayload): void {
+		const levelList = this.levelHandlers.get(payload.level);
+		if (levelList) {
+			for (const handler of levelList) {
+				handler(payload);
+			}
+		}
+
+		const eventList = this.eventHandlers.get(payload.event);
+		if (eventList) {
+			for (const handler of eventList) {
+				handler(payload);
+			}
+		}
+
+		for (const handler of this.allHandlers) {
+			handler(payload);
 		}
 	}
 
-	/**
-	 * Register a handler for a specific event type.
-	 */
-	on(type: PipelineEvent, handler: EventHandler): void {
-		let list = this.handlers.get(type);
+	// ─── Level-based registration ───
+
+	onLevel(level: LogLevel, handler: EventHandler): void {
+		let list = this.levelHandlers.get(level);
 		if (!list) {
 			list = [];
-			this.handlers.set(type, list);
+			this.levelHandlers.set(level, list);
 		}
 		list.push(handler);
 	}
 
-	/**
-	 * Unregister a handler for a specific event type.
-	 */
-	off(type: PipelineEvent, handler: EventHandler): void {
-		const list = this.handlers.get(type);
+	offLevel(level: LogLevel, handler: EventHandler): void {
+		const list = this.levelHandlers.get(level);
 		if (!list) return;
 		const index = list.indexOf(handler);
 		if (index !== -1) {
@@ -50,24 +58,54 @@ export class PipelineEventBus {
 		}
 	}
 
-	/**
-	 * Construct and emit an ERROR event with auto-generated timestamp.
-	 */
-	emitError(phase: PipelinePhase, error: Omit<ErrorEventPayload, "type" | "phase" | "timestamp">): void {
-		this.emit({ ...error, type: PipelineEvent.ERROR, phase, timestamp: Date.now() });
+	// ─── Event-based registration ───
+
+	onEvent(event: PipelineEvent, handler: EventHandler): void {
+		let list = this.eventHandlers.get(event);
+		if (!list) {
+			list = [];
+			this.eventHandlers.set(event, list);
+		}
+		list.push(handler);
 	}
 
-	/**
-	 * Construct and emit a WARN event with auto-generated timestamp.
-	 */
-	emitWarn(phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
-		this.emit({ type: PipelineEvent.WARN, phase, timestamp: Date.now(), message, context } as LogEventPayload);
+	offEvent(event: PipelineEvent, handler: EventHandler): void {
+		const list = this.eventHandlers.get(event);
+		if (!list) return;
+		const index = list.indexOf(handler);
+		if (index !== -1) {
+			list.splice(index, 1);
+		}
 	}
 
-	/**
-	 * Construct and emit an INFO event with auto-generated timestamp.
-	 */
-	emitInfo(phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
-		this.emit({ type: PipelineEvent.INFO, phase, timestamp: Date.now(), message, context } as LogEventPayload);
+	// ─── Broadcast registration ───
+
+	onAll(handler: EventHandler): void {
+		this.allHandlers.push(handler);
+	}
+
+	offAll(handler: EventHandler): void {
+		const index = this.allHandlers.indexOf(handler);
+		if (index !== -1) {
+			this.allHandlers.splice(index, 1);
+		}
+	}
+
+	// ─── Convenience emit methods ───
+
+	emitError(event: PipelineEvent, phase: PipelinePhase, error: Omit<ErrorPayload, "event" | "level" | "phase" | "timestamp">): void {
+		this.emit({ ...error, event, level: LogLevel.ERROR, phase, timestamp: Date.now() } as ErrorPayload);
+	}
+
+	emitWarn(event: PipelineEvent, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		this.emit({ event, level: LogLevel.WARN, phase, timestamp: Date.now(), message, context } as LogPayload);
+	}
+
+	emitInfo(event: PipelineEvent, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		this.emit({ event, level: LogLevel.INFO, phase, timestamp: Date.now(), message, context } as LogPayload);
+	}
+
+	emitDebug(event: PipelineEvent, phase: PipelinePhase, message: string, context?: Record<string, unknown>): void {
+		this.emit({ event, level: LogLevel.DEBUG, phase, timestamp: Date.now(), message, context } as LogPayload);
 	}
 }

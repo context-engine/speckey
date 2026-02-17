@@ -1,19 +1,26 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import {
-	PipelineEvent,
-	type ErrorEventPayload,
-	type LogEventPayload,
-	type PhaseEventPayload,
-	type PipelineEventPayload,
+	LogLevel,
+	IoEvent,
+	ParserEvent,
+	PhaseEvent,
+	PipelinePhase,
+} from "@speckey/constants";
+import {
+	type BusPayload,
+	type ErrorPayload,
+	type LogPayload,
+	type PhasePayload,
 } from "@speckey/event-bus";
 import { ErrorSubscriber } from "../src/error-subscriber";
 
 // ─── Helpers ───
 
-function makeErrorEvent(overrides: Partial<ErrorEventPayload> = {}): ErrorEventPayload {
+function makeErrorPayload(overrides: Partial<ErrorPayload> = {}): ErrorPayload {
 	return {
-		type: PipelineEvent.ERROR,
-		phase: "discovery",
+		event: IoEvent.FILE_DISCOVERY,
+		level: LogLevel.ERROR,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
 		path: "/some/file.md",
 		message: "Path not found",
@@ -23,26 +30,28 @@ function makeErrorEvent(overrides: Partial<ErrorEventPayload> = {}): ErrorEventP
 	};
 }
 
-function makeLogEvent(
-	type: PipelineEvent.WARN | PipelineEvent.INFO | PipelineEvent.DEBUG,
-	overrides: Partial<LogEventPayload> = {},
-): LogEventPayload {
+function makeLogPayload(
+	level: LogLevel.WARN | LogLevel.INFO | LogLevel.DEBUG = LogLevel.INFO,
+	overrides: Partial<LogPayload> = {},
+): LogPayload {
 	return {
-		type,
-		phase: "discovery",
+		event: IoEvent.FILE_DISCOVERY,
+		level,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
-		message: `Test ${type} message`,
+		message: `Test ${level} message`,
 		...overrides,
 	};
 }
 
-function makePhaseEvent(
-	type: PipelineEvent.PHASE_START | PipelineEvent.PHASE_END,
-	overrides: Partial<PhaseEventPayload> = {},
-): PhaseEventPayload {
+function makePhasePayload(
+	event: PhaseEvent.PHASE_START | PhaseEvent.PHASE_END = PhaseEvent.PHASE_START,
+	overrides: Partial<PhasePayload> = {},
+): PhasePayload {
 	return {
-		type,
-		phase: "discovery",
+		event,
+		level: LogLevel.INFO,
+		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
 		...overrides,
 	};
@@ -57,53 +66,53 @@ describe("ErrorSubscriber", () => {
 		subscriber = new ErrorSubscriber();
 	});
 
-	// ─── Feature: ERROR Accumulation (ST.8) ───
+	// ─── Feature: ERROR Accumulation ───
 
-	describe("Feature: ERROR Event Accumulation", () => {
-		it("should accumulate a single ERROR event as PipelineError", () => {
-			const event = makeErrorEvent({
-				phase: "discovery",
+	describe("Feature: ERROR Payload Accumulation", () => {
+		it("should accumulate a single ErrorPayload as PipelineError", () => {
+			const payload = makeErrorPayload({
+				phase: PipelinePhase.DISCOVERY,
 				path: "/test/missing.md",
 				message: "Path does not exist",
 				code: "ENOENT",
 				userMessage: ["File not found", "Path does not exist"],
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			expect(subscriber.errors).toHaveLength(1);
 			expect(subscriber.count).toBe(1);
 
 			const error = subscriber.errors[0];
-			expect(error.phase).toBe("discovery");
+			expect(error.phase).toBe(PipelinePhase.DISCOVERY);
 			expect(error.path).toBe("/test/missing.md");
 			expect(error.message).toBe("Path does not exist");
 			expect(error.code).toBe("ENOENT");
 			expect(error.userMessage).toEqual(["File not found", "Path does not exist"]);
 		});
 
-		it("should accumulate multiple ERROR events", () => {
-			subscriber.handle(makeErrorEvent({ phase: "discovery", path: "/a.md", code: "ENOENT" }));
-			subscriber.handle(makeErrorEvent({ phase: "read", path: "/b.md", code: "EACCES" }));
-			subscriber.handle(makeErrorEvent({ phase: "parse", path: "/c.md", code: "PARSE_FAILURE" }));
+		it("should accumulate multiple ErrorPayload payloads", () => {
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.DISCOVERY, path: "/a.md", code: "ENOENT" }));
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.READ, path: "/b.md", code: "EACCES" }));
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.PARSE, path: "/c.md", code: "PARSE_FAILURE" }));
 
 			expect(subscriber.errors).toHaveLength(3);
 			expect(subscriber.count).toBe(3);
 		});
 
-		it("should preserve field values from ErrorEventPayload", () => {
-			const event = makeErrorEvent({
-				phase: "build",
+		it("should preserve field values from ErrorPayload", () => {
+			const payload = makeErrorPayload({
+				phase: PipelinePhase.BUILD,
 				path: "/specs/service.md",
 				message: "Invalid FQN format",
 				code: "INVALID_FQN",
 				userMessage: ["Entity build error in service.md [INVALID_FQN]", "Invalid FQN format"],
 			});
 
-			subscriber.handle(event);
+			subscriber.handle(payload);
 
 			const error = subscriber.errors[0];
-			expect(error.phase).toBe("build");
+			expect(error.phase).toBe(PipelinePhase.BUILD);
 			expect(error.path).toBe("/specs/service.md");
 			expect(error.message).toBe("Invalid FQN format");
 			expect(error.code).toBe("INVALID_FQN");
@@ -114,9 +123,15 @@ describe("ErrorSubscriber", () => {
 		});
 
 		it("should preserve order of accumulated errors", () => {
-			const phases = ["discovery", "read", "parse", "extract", "build"] as const;
+			const phases = [
+				PipelinePhase.DISCOVERY,
+				PipelinePhase.READ,
+				PipelinePhase.PARSE,
+				PipelinePhase.EXTRACT,
+				PipelinePhase.BUILD,
+			] as const;
 			for (const phase of phases) {
-				subscriber.handle(makeErrorEvent({ phase }));
+				subscriber.handle(makeErrorPayload({ phase }));
 			}
 
 			expect(subscriber.errors).toHaveLength(5);
@@ -127,18 +142,18 @@ describe("ErrorSubscriber", () => {
 
 		it("should accumulate errors across all 8 pipeline phases", () => {
 			const allPhases = [
-				"discovery",
-				"read",
-				"parse",
-				"extract",
-				"unit_validate",
-				"build",
-				"integration_validate",
-				"write",
+				PipelinePhase.DISCOVERY,
+				PipelinePhase.READ,
+				PipelinePhase.PARSE,
+				PipelinePhase.EXTRACT,
+				PipelinePhase.UNIT_VALIDATE,
+				PipelinePhase.BUILD,
+				PipelinePhase.INTEGRATION_VALIDATE,
+				PipelinePhase.WRITE,
 			] as const;
 
 			for (const phase of allPhases) {
-				subscriber.handle(makeErrorEvent({ phase }));
+				subscriber.handle(makeErrorPayload({ phase }));
 			}
 
 			expect(subscriber.errors).toHaveLength(8);
@@ -147,57 +162,65 @@ describe("ErrorSubscriber", () => {
 				expect(subscriber.errors[i].phase).toBe(allPhases[i]);
 			}
 		});
+
+		it("should handle ErrorPayload with different event types", () => {
+			subscriber.handle(makeErrorPayload({ event: IoEvent.FILE_DISCOVERY }));
+			subscriber.handle(makeErrorPayload({ event: IoEvent.FILE_READ }));
+			subscriber.handle(makeErrorPayload({ event: ParserEvent.MERMAID_VALIDATION }));
+
+			expect(subscriber.errors).toHaveLength(3);
+			expect(subscriber.count).toBe(3);
+		});
 	});
 
-	// ─── Feature: Non-ERROR Filtering (ST.8) ───
+	// ─── Feature: Bus-Level Filtering ───
 
-	describe("Feature: Non-ERROR Event Filtering", () => {
-		it("should ignore WARN events", () => {
-			subscriber.handle(makeLogEvent(PipelineEvent.WARN));
+	describe("Feature: Bus-Level Filtering", () => {
+		// Note: In the new architecture, ErrorSubscriber registers via
+		// bus.onLevel(LogLevel.ERROR) — the bus only delivers ERROR payloads.
+		// These tests verify defensive behavior if handle() is called with
+		// non-ERROR payloads.
 
-			expect(subscriber.errors).toHaveLength(0);
-			expect(subscriber.count).toBe(0);
-		});
-
-		it("should ignore INFO events", () => {
-			subscriber.handle(makeLogEvent(PipelineEvent.INFO));
+		it("should ignore WARN-level payloads", () => {
+			subscriber.handle(makeLogPayload(LogLevel.WARN) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(0);
 			expect(subscriber.count).toBe(0);
 		});
 
-		it("should ignore DEBUG events", () => {
-			subscriber.handle(makeLogEvent(PipelineEvent.DEBUG));
+		it("should ignore INFO-level payloads", () => {
+			subscriber.handle(makeLogPayload(LogLevel.INFO) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(0);
 			expect(subscriber.count).toBe(0);
 		});
 
-		it("should ignore PHASE_START events", () => {
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_START));
+		it("should ignore DEBUG-level payloads", () => {
+			subscriber.handle(makeLogPayload(LogLevel.DEBUG) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(0);
 			expect(subscriber.count).toBe(0);
 		});
 
-		it("should ignore PHASE_END events", () => {
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_END));
+		it("should ignore PhasePayload payloads", () => {
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(0);
 			expect(subscriber.count).toBe(0);
 		});
 
-		it("should ignore all non-ERROR event types", () => {
-			const nonErrorEvents: PipelineEventPayload[] = [
-				makeLogEvent(PipelineEvent.WARN),
-				makeLogEvent(PipelineEvent.INFO),
-				makeLogEvent(PipelineEvent.DEBUG),
-				makePhaseEvent(PipelineEvent.PHASE_START),
-				makePhaseEvent(PipelineEvent.PHASE_END),
+		it("should ignore all non-ERROR payloads in a mixed stream", () => {
+			const nonErrorPayloads: BusPayload[] = [
+				makeLogPayload(LogLevel.WARN),
+				makeLogPayload(LogLevel.INFO),
+				makeLogPayload(LogLevel.DEBUG),
+				makePhasePayload(PhaseEvent.PHASE_START),
+				makePhasePayload(PhaseEvent.PHASE_END),
 			];
 
-			for (const event of nonErrorEvents) {
-				subscriber.handle(event);
+			for (const payload of nonErrorPayloads) {
+				subscriber.handle(payload as unknown as ErrorPayload);
 			}
 
 			expect(subscriber.errors).toHaveLength(0);
@@ -205,25 +228,25 @@ describe("ErrorSubscriber", () => {
 		});
 	});
 
-	// ─── Feature: Mixed Events ───
+	// ─── Feature: Mixed Payload Stream ───
 
-	describe("Feature: Mixed Event Stream", () => {
-		it("should accumulate only ERROR events from a mixed stream", () => {
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_START, { phase: "discovery" }));
-			subscriber.handle(makeLogEvent(PipelineEvent.INFO, { message: "Starting discovery" }));
-			subscriber.handle(makeErrorEvent({ phase: "discovery", code: "ENOENT" }));
-			subscriber.handle(makeLogEvent(PipelineEvent.WARN, { message: "Large file skipped" }));
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_END, { phase: "discovery" }));
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_START, { phase: "read" }));
-			subscriber.handle(makeErrorEvent({ phase: "read", code: "EACCES" }));
-			subscriber.handle(makeLogEvent(PipelineEvent.DEBUG, { message: "File read complete" }));
-			subscriber.handle(makePhaseEvent(PipelineEvent.PHASE_END, { phase: "read" }));
+	describe("Feature: Mixed Payload Stream", () => {
+		it("should accumulate only ERROR payloads from a mixed stream", () => {
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makeLogPayload(LogLevel.INFO) as unknown as ErrorPayload);
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.DISCOVERY, code: "ENOENT" }));
+			subscriber.handle(makeLogPayload(LogLevel.WARN) as unknown as ErrorPayload);
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.READ, code: "EACCES" }));
+			subscriber.handle(makeLogPayload(LogLevel.DEBUG) as unknown as ErrorPayload);
+			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(2);
 			expect(subscriber.count).toBe(2);
-			expect(subscriber.errors[0].phase).toBe("discovery");
+			expect(subscriber.errors[0].phase).toBe(PipelinePhase.DISCOVERY);
 			expect(subscriber.errors[0].code).toBe("ENOENT");
-			expect(subscriber.errors[1].phase).toBe("read");
+			expect(subscriber.errors[1].phase).toBe(PipelinePhase.READ);
 			expect(subscriber.errors[1].code).toBe("EACCES");
 		});
 	});
@@ -241,7 +264,7 @@ describe("ErrorSubscriber", () => {
 
 		it("should return a consistent errors array reference", () => {
 			const ref1 = subscriber.errors;
-			subscriber.handle(makeErrorEvent());
+			subscriber.handle(makeErrorPayload());
 			const ref2 = subscriber.errors;
 
 			// Both should reflect the accumulated state
