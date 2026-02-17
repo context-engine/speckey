@@ -451,14 +451,15 @@ classDiagram
             return logEntry["1"] as Record<string, unknown> | undefined;
         }
 
+        /** Helper: filter logs by phase="parse" in context (event bus pattern) */
         function parseScoped(logs: Record<string, unknown>[]): Record<string, unknown>[] {
             return logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name?.includes("parse");
+                const ctx = getData(l);
+                return ctx?.phase === "parse";
             });
         }
 
-        it("should create parse child logger and forward to MarkdownParser", async () => {
+        it("should emit pipeline-level parse logs via event bus", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
@@ -469,14 +470,14 @@ classDiagram
             const scoped = parseScoped(logs);
             expect(scoped.length).toBeGreaterThan(0);
 
-            // Parser-originated log proves the logger was forwarded
-            const extractedBlocks = scoped.find(
-                (l) => getMsg(l) === "Extracted code blocks",
+            // Pipeline emits "Parsing file" and "Extraction complete" via bus → LogSubscriber
+            const parsingFile = scoped.find(
+                (l) => getMsg(l) === "Parsing file",
             );
-            expect(extractedBlocks).toBeDefined();
+            expect(parsingFile).toBeDefined();
         });
 
-        it("should emit parser-originated 'Extracted code blocks' log", async () => {
+        it("should emit 'Extraction complete' log with filesExtracted count", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
@@ -485,16 +486,15 @@ classDiagram
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-            const extractedBlocks = scoped.find(
-                (l) => getMsg(l) === "Extracted code blocks",
+            const extractionComplete = scoped.find(
+                (l) => getMsg(l) === "Extraction complete",
             );
-            expect(extractedBlocks).toBeDefined();
-            const data = getData(extractedBlocks!);
-            expect(data).toHaveProperty("count");
-            expect(data).toHaveProperty("file");
+            expect(extractionComplete).toBeDefined();
+            const data = getData(extractionComplete!);
+            expect(data).toHaveProperty("filesExtracted");
         });
 
-        it("should emit parser-originated 'Extracted tables' log", async () => {
+        it("should emit 'Parsing file' log with file context", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "with-tables")],
@@ -503,12 +503,11 @@ classDiagram
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-            const extractedTables = scoped.find(
-                (l) => getMsg(l) === "Extracted tables",
+            const parsingFile = scoped.find(
+                (l) => getMsg(l) === "Parsing file",
             );
-            expect(extractedTables).toBeDefined();
-            const data = getData(extractedTables!);
-            expect(data).toHaveProperty("count");
+            expect(parsingFile).toBeDefined();
+            const data = getData(parsingFile!);
             expect(data).toHaveProperty("file");
         });
 

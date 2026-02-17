@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig, PipelineResult } from "../../packages/core/src/types";
-import { DiscoveryErrors } from "@speckey/constants";
+import { DiscoveryErrors, PipelinePhase } from "@speckey/constants";
 
 /**
  * Pipeline ↔ FileDiscovery Integration Tests
@@ -180,7 +180,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(result.stats.filesRead).toBe(0);
             expect(result.errors.length).toBeGreaterThanOrEqual(2);
             for (const err of result.errors) {
-                expect(err.phase).toBe("discovery");
+                expect(err.phase).toBe(PipelinePhase.DISCOVERY);
             }
         });
     });
@@ -199,7 +199,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             expect(result.errors.length).toBeGreaterThanOrEqual(1);
             const err = result.errors[0]!;
-            expect(err.phase).toBe("discovery");
+            expect(err.phase).toBe(PipelinePhase.DISCOVERY);
             expect(err.code).toBe("ENOENT");
             expect(err.userMessage).toBe(DiscoveryErrors.PATH_NOT_FOUND);
         });
@@ -213,7 +213,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             expect(result.errors.length).toBeGreaterThanOrEqual(1);
             const err = result.errors[0]!;
-            expect(err.phase).toBe("discovery");
+            expect(err.phase).toBe(PipelinePhase.DISCOVERY);
             expect(err.code).toBe("EMPTY_DIRECTORY");
         });
 
@@ -233,7 +233,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(err.code).toBeDefined();
             expect(err.userMessage).toBeDefined();
             // phase is always "discovery" for discover() errors
-            expect(err.phase).toBe("discovery");
+            expect(err.phase).toBe(PipelinePhase.DISCOVERY);
         });
     });
 
@@ -387,15 +387,15 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             return logEntry["1"] as Record<string, unknown> | undefined;
         }
 
-        /** Helper: filter logs that have _meta.name containing "discovery" */
+        /** Helper: filter logs by phase context (event bus routes phase in "1".phase) */
         function discoveryScoped(logs: Record<string, unknown>[]): Record<string, unknown>[] {
             return logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name?.includes("discovery");
+                const ctx = getData(l);
+                return ctx?.phase === "discovery" || ctx?.phase === "read";
             });
         }
 
-        it("should create discovery child logger and forward to FD methods", async () => {
+        it("should emit pipeline-level discovery logs via event bus", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-a")],
@@ -406,15 +406,15 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             const scoped = discoveryScoped(logs);
             expect(scoped.length).toBeGreaterThan(0);
 
-            // FD-originated logs prove the logger was forwarded to discover() and readFiles()
-            const fdDiscoveryComplete = scoped.find(
-                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped !== undefined,
+            // Pipeline emits discovery/read boundary logs via bus → LogSubscriber
+            const discoveryComplete = scoped.find(
+                (l) => getMsg(l) === "Discovery complete",
             );
-            const fdReadComplete = scoped.find(
-                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped !== undefined,
+            const readComplete = scoped.find(
+                (l) => getMsg(l) === "Read complete",
             );
-            expect(fdDiscoveryComplete).toBeDefined();
-            expect(fdReadComplete).toBeDefined();
+            expect(discoveryComplete).toBeDefined();
+            expect(readComplete).toBeDefined();
         });
 
         it("should emit pipeline-level boundary logs", async () => {
@@ -427,23 +427,18 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             const scoped = discoveryScoped(logs);
 
-            // Pipeline boundary messages (no "skipped" in payload — distinguishes from FD)
             const discoveringFiles = scoped.find((l) => getMsg(l) === "Discovering files");
-            const pipelineDiscoveryComplete = scoped.find(
-                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped === undefined,
-            );
+            const discoveryComplete = scoped.find((l) => getMsg(l) === "Discovery complete");
             const readingFiles = scoped.find((l) => getMsg(l) === "Reading files");
-            const pipelineReadComplete = scoped.find(
-                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped === undefined,
-            );
+            const readComplete = scoped.find((l) => getMsg(l) === "Read complete");
 
             expect(discoveringFiles).toBeDefined();
-            expect(pipelineDiscoveryComplete).toBeDefined();
+            expect(discoveryComplete).toBeDefined();
             expect(readingFiles).toBeDefined();
-            expect(pipelineReadComplete).toBeDefined();
+            expect(readComplete).toBeDefined();
         });
 
-        it("should emit FD-originated logs with detailed payloads", async () => {
+        it("should include context in pipeline-level discovery logs", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-a")],
@@ -453,25 +448,15 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             const scoped = discoveryScoped(logs);
 
-            // FD "Discovery complete" includes filesFound, skipped, errors
-            const fdDiscovery = scoped.find(
-                (l) => getMsg(l) === "Discovery complete" && getData(l)?.skipped !== undefined,
-            );
-            expect(fdDiscovery).toBeDefined();
-            const fdDiscoveryData = getData(fdDiscovery!);
-            expect(fdDiscoveryData).toHaveProperty("filesFound");
-            expect(fdDiscoveryData).toHaveProperty("skipped");
-            expect(fdDiscoveryData).toHaveProperty("errors");
+            // "Discovery complete" includes filesFound
+            const discoveryComplete = scoped.find((l) => getMsg(l) === "Discovery complete");
+            expect(discoveryComplete).toBeDefined();
+            expect(getData(discoveryComplete!)).toHaveProperty("filesFound");
 
-            // FD "Read complete" includes filesRead, skipped, errors
-            const fdRead = scoped.find(
-                (l) => getMsg(l) === "Read complete" && getData(l)?.skipped !== undefined,
-            );
-            expect(fdRead).toBeDefined();
-            const fdReadData = getData(fdRead!);
-            expect(fdReadData).toHaveProperty("filesRead");
-            expect(fdReadData).toHaveProperty("skipped");
-            expect(fdReadData).toHaveProperty("errors");
+            // "Read complete" includes filesRead
+            const readComplete = scoped.find((l) => getMsg(l) === "Read complete");
+            expect(readComplete).toBeDefined();
+            expect(getData(readComplete!)).toHaveProperty("filesRead");
         });
 
         it("should emit discovery error logs for invalid paths", async () => {
@@ -484,12 +469,15 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             const scoped = discoveryScoped(logs);
 
-            // Pipeline-level "Discovery error" at warn level
-            const errorLog = scoped.find((l) => getMsg(l) === "Discovery error");
+            // ERROR events logged at warn level by LogSubscriber
+            const errorLog = scoped.find((l) => {
+                const meta = l["_meta"] as { logLevelName?: string } | undefined;
+                return meta?.logLevelName === "WARN";
+            });
             expect(errorLog).toBeDefined();
         });
 
-        it("should run without logger (no crash, FD receives undefined)", async () => {
+        it("should run without logger (no crash)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "dir-a")],
             };
@@ -549,7 +537,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(result.validationReport).toBeUndefined();
             expect(result.writeResult).toBeUndefined();
             expect(result.errors.length).toBeGreaterThanOrEqual(1);
-            expect(result.errors[0]?.phase).toBe("discovery");
+            expect(result.errors[0]?.phase).toBe(PipelinePhase.DISCOVERY);
         });
     });
 
@@ -607,7 +595,7 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(result.stats.filesDiscovered).toBe(0);
             expect(result.stats.filesRead).toBe(0);
             expect(result.errors.length).toBeGreaterThanOrEqual(1);
-            expect(result.errors[0]?.phase).toBe("discovery");
+            expect(result.errors[0]?.phase).toBe(PipelinePhase.DISCOVERY);
             assertPhaseGatedShape(result);
         });
     });

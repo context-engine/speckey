@@ -5,6 +5,7 @@ import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../../packages/core/src";
 import type { PipelineConfig, PipelineResult } from "../../packages/core/src/types";
 import { DiagramType } from "../../packages/parser/src/mermaid-validation/types";
+import { PipelinePhase } from "@speckey/constants";
 
 /**
  * Pipeline ↔ MermaidValidation Integration Tests
@@ -571,7 +572,7 @@ classDiagram
             expect(parseErrors.length).toBeGreaterThanOrEqual(1);
 
             const err = parseErrors[0]!;
-            expect(err.phase).toBe("parse");
+            expect(err.phase).toBe(PipelinePhase.PARSE);
             expect(err.path).toContain("invalid-mermaid");
             expect(err.message).toBeDefined();
             expect(err.code).toMatch(/^LINE_\d+$/);
@@ -589,7 +590,7 @@ classDiagram
             expect(parseErrors.length).toBeGreaterThanOrEqual(2);
 
             for (const err of parseErrors) {
-                expect(err.phase).toBe("parse");
+                expect(err.phase).toBe(PipelinePhase.PARSE);
                 expect(err.code).toMatch(/^LINE_\d+$/);
             }
         });
@@ -720,10 +721,15 @@ classDiagram
             return typeof logEntry["0"] === "string" ? (logEntry["0"] as string) : "";
         }
 
+        function getData(logEntry: Record<string, unknown>): Record<string, unknown> | undefined {
+            return logEntry["1"] as Record<string, unknown> | undefined;
+        }
+
+        /** Helper: filter logs by phase="parse" in context (event bus pattern) */
         function parseScoped(logs: Record<string, unknown>[]): Record<string, unknown>[] {
             return logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name?.includes("parse");
+                const ctx = getData(l);
+                return ctx?.phase === "parse";
             });
         }
 
@@ -757,19 +763,19 @@ classDiagram
             expect(warning).toBeDefined();
         });
 
-        it("should emit warning for empty mermaid blocks", async () => {
-            const { logger, logs } = createTestLogger();
+        it("should silently exclude empty mermaid blocks (WARNING-level, not bridged to bus)", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "empty-mermaid-block")],
             };
 
-            await pipeline.run(config, logger);
+            const result = await pipeline.run(config);
 
-            const scoped = parseScoped(logs);
-            const emptyWarning = scoped.find(
-                (l) => getMsg(l).startsWith("Empty mermaid block at line"),
-            );
-            expect(emptyWarning).toBeDefined();
+            // Empty blocks produce WARNING in MV (not ERROR), so no pipeline error
+            // and no validated blocks — silently excluded
+            expect(result.files[0]!.blocks).toHaveLength(0);
+            expect(result.stats.blocksExtracted).toBe(0);
+            const parseErrors = result.errors.filter((e) => e.phase === "parse");
+            expect(parseErrors).toHaveLength(0);
         });
     });
 
@@ -799,10 +805,11 @@ classDiagram
             return logEntry["1"] as Record<string, unknown> | undefined;
         }
 
+        /** Helper: filter logs by phase="parse" in context (event bus pattern) */
         function parseScoped(logs: Record<string, unknown>[]): Record<string, unknown>[] {
             return logs.filter((l) => {
-                const meta = l["_meta"] as { name?: string } | undefined;
-                return meta?.name?.includes("parse");
+                const ctx = getData(l);
+                return ctx?.phase === "parse";
             });
         }
 
@@ -836,7 +843,7 @@ classDiagram
             expect(parsingFile).toBeDefined();
         });
 
-        it("should emit validator logs for successful validation", async () => {
+        it("should emit parse-phase logs for successful validation", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "single-class")],
@@ -845,11 +852,11 @@ classDiagram
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-            // Validator should log something through the parse logger
+            // Pipeline emits parse-phase logs via bus → LogSubscriber
             expect(scoped.length).toBeGreaterThan(0);
         });
 
-        it("should emit error-level logs for invalid mermaid", async () => {
+        it("should emit warn-level logs for invalid mermaid", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "invalid-mermaid")],
@@ -858,13 +865,12 @@ classDiagram
             await pipeline.run(config, logger);
 
             const scoped = parseScoped(logs);
-            // Should have error-level entries for syntax failures
-            const errorLogs = scoped.filter((l) => {
-                const level = l["_meta"] as { logLevelId?: number } | undefined;
-                // error level is typically 0 in tslog
-                return level?.logLevelId !== undefined && level.logLevelId <= 3;
+            // ERROR events for mermaid syntax failures are logged at warn level by LogSubscriber
+            const warnLogs = scoped.filter((l) => {
+                const level = l["_meta"] as { logLevelName?: string } | undefined;
+                return level?.logLevelName === "WARN";
             });
-            expect(errorLogs.length).toBeGreaterThan(0);
+            expect(warnLogs.length).toBeGreaterThan(0);
         });
 
         it("should run validation phase without logger (no crash)", async () => {

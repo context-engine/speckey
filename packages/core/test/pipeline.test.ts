@@ -5,7 +5,7 @@ import { Logger, type AppLogObj } from "@speckey/logger";
 import { ParsePipeline } from "../src/pipeline";
 import type { PipelineConfig } from "../src/types";
 import { OrphanPolicy } from "@speckey/database";
-import { DiscoveryErrors } from "@speckey/constants";
+import { DiscoveryErrors, PipelinePhase } from "@speckey/constants";
 
 describe("ParsePipeline", () => {
     const testDir = resolve("./test-temp-core");
@@ -222,7 +222,7 @@ class OrderService {
             expect(result.files).toHaveLength(0);
             expect(result.stats.filesDiscovered).toBe(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]?.phase).toBe("discovery");
+            expect(result.errors[0]?.phase).toBe(PipelinePhase.DISCOVERY);
             expect(result.errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
         });
 
@@ -776,7 +776,7 @@ class SimpleService {
             expect(result.stats.filesDiscovered).toBe(1);
         });
 
-        it("should create child loggers per phase with log entries", async () => {
+        it("should produce phase-tagged log entries via event bus", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [testDir],
@@ -785,20 +785,21 @@ class SimpleService {
 
             await pipeline.run(config, logger);
 
-            // Pipeline should produce log entries via child loggers
+            // Pipeline should produce log entries via LogSubscriber
             expect(logs.length).toBeGreaterThan(0);
 
-            // Each log entry from a child logger has _meta.name reflecting the phase
-            const loggerNames = new Set(
+            // LogSubscriber calls logger.info(message, { phase, ...context })
+            // tslog stores args as "0", "1", etc. — context is at key "1"
+            const phases = new Set(
                 logs.map((l) => {
-                    const meta = l["_meta"] as { name?: string } | undefined;
-                    return meta?.name;
+                    const ctx = (l as Record<string, unknown>)["1"] as { phase?: string } | undefined;
+                    return ctx?.phase;
                 }).filter(Boolean),
             );
 
             // At minimum, discovery and parse phases should produce logs
-            expect(loggerNames.has("discovery")).toBe(true);
-            expect(loggerNames.has("parse")).toBe(true);
+            expect(phases.has("discovery")).toBe(true);
+            expect(phases.has("parse")).toBe(true);
         });
 
         it("should log from build phase when processing class diagrams", async () => {
@@ -833,7 +834,7 @@ class SimpleService {
             expect(validateLogs.length).toBeGreaterThan(0);
         });
 
-        it("should include phase-scoped context in log entries", async () => {
+        it("should include phase context in log entries", async () => {
             const { logger, logs } = createTestLogger();
             const config: PipelineConfig = {
                 paths: [testDir],
@@ -842,18 +843,19 @@ class SimpleService {
 
             await pipeline.run(config, logger);
 
-            // Verify parent-child relationship: child loggers should have parentNames
-            const childLogs = logs.filter((l) => {
-                const meta = l["_meta"] as { parentNames?: string[] } | undefined;
-                return meta?.parentNames && meta.parentNames.length > 0;
+            // LogSubscriber calls logger.info(message, { phase, ...context })
+            // tslog stores args as "0", "1", etc. — context is at key "1"
+            const phaseLogs = logs.filter((l) => {
+                const ctx = (l as Record<string, unknown>)["1"] as { phase?: string } | undefined;
+                return ctx?.phase !== undefined;
             });
 
-            expect(childLogs.length).toBeGreaterThan(0);
+            expect(phaseLogs.length).toBeGreaterThan(0);
 
-            // All child logs should have "test-pipeline" as parent
-            for (const log of childLogs) {
-                const meta = log["_meta"] as { parentNames: string[] };
-                expect(meta.parentNames).toContain("test-pipeline");
+            // All phase-tagged logs should have a valid phase string
+            for (const log of phaseLogs) {
+                const ctx = (log as Record<string, unknown>)["1"] as { phase: string };
+                expect(typeof ctx.phase).toBe("string");
             }
         });
 
