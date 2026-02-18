@@ -165,34 +165,14 @@ export async function layoutFlowchart(
     nodeSizeMap.set(node.id, computeNodeSize(node));
   }
 
-  // Determine which nodes belong to subgraphs
-  const subgraphNodeIds = new Set<string>();
+  // Flat layout: all nodes at root level (avoids ELK compound-layout hangs
+  // when edges cross subgraph boundaries). Subgraph bounding boxes are
+  // computed post-layout from their contained nodes' positions.
 
-  const elkSubgraphs: ElkNode[] = subgraphs.map((sg) => {
-    const children: ElkNode[] = sg.nodeIds
-      .filter((id) => nodeSizeMap.has(id))
-      .map((id) => {
-        subgraphNodeIds.add(id);
-        const size = nodeSizeMap.get(id)!;
-        return { id, width: size.width, height: size.height };
-      });
-
-    return {
-      id: sg.id,
-      layoutOptions: {
-        'elk.padding': `[top=${SUBGRAPH_PADDING + 20},left=${SUBGRAPH_PADDING},bottom=${SUBGRAPH_PADDING},right=${SUBGRAPH_PADDING}]`,
-      },
-      children,
-    };
+  const elkChildren: ElkNode[] = nodes.map((n) => {
+    const size = nodeSizeMap.get(n.id)!;
+    return { id: n.id, width: size.width, height: size.height };
   });
-
-  // Top-level nodes (not in any subgraph)
-  const topLevelNodes: ElkNode[] = nodes
-    .filter((n) => !subgraphNodeIds.has(n.id))
-    .map((n) => {
-      const size = nodeSizeMap.get(n.id)!;
-      return { id: n.id, width: size.width, height: size.height };
-    });
 
   const elkEdges: ElkExtendedEdge[] = edges.map((edge) => ({
     id: edge.id,
@@ -209,60 +189,91 @@ export async function layoutFlowchart(
       'elk.layered.spacing.nodeNodeBetweenLayers': '70',
       'elk.edgeRouting': 'ORTHOGONAL',
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
     },
-    children: [...topLevelNodes, ...elkSubgraphs],
+    children: elkChildren,
     edges: elkEdges,
   };
 
   const layoutResult = await elk.layout(elkGraph);
 
-  // Extract positioned nodes (handles nested ELK results)
+  // Extract positioned nodes
   const positionedNodes: PositionedFlowNode[] = [];
+  const positionedNodeMap = new Map<string, PositionedFlowNode>();
   let maxX = 0;
   let maxY = 0;
 
-  function extractNodes(
-    elkChildren: ElkNode[] | undefined,
-    offsetX: number,
-    offsetY: number,
-  ): void {
-    for (const child of elkChildren ?? []) {
-      const data = nodeDataMap.get(child.id);
-      if (data) {
-        const x = (child.x ?? 0) + offsetX;
-        const y = (child.y ?? 0) + offsetY;
-        const w = child.width ?? nodeSizeMap.get(child.id)!.width;
-        const h = child.height ?? nodeSizeMap.get(child.id)!.height;
-        positionedNodes.push({ data, x, y, width: w, height: h });
-        maxX = Math.max(maxX, x + w);
-        maxY = Math.max(maxY, y + h);
-      } else if (child.children) {
-        // Subgraph compound node — recurse with offset
-        const sgX = (child.x ?? 0) + offsetX;
-        const sgY = (child.y ?? 0) + offsetY;
-        extractNodes(child.children, sgX, sgY);
-      }
-    }
+  for (const child of layoutResult.children ?? []) {
+    const data = nodeDataMap.get(child.id);
+    if (!data) continue;
+    const x = child.x ?? 0;
+    const y = child.y ?? 0;
+    const w = child.width ?? nodeSizeMap.get(child.id)!.width;
+    const h = child.height ?? nodeSizeMap.get(child.id)!.height;
+    const positioned: PositionedFlowNode = { data, x, y, width: w, height: h };
+    positionedNodes.push(positioned);
+    positionedNodeMap.set(child.id, positioned);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
   }
 
-  extractNodes(layoutResult.children, 0, 0);
-
-  // Extract positioned subgraphs (bounding boxes)
+  // Compute subgraph bounding boxes from contained nodes
   const positionedSubgraphs: PositionedFlowSubgraph[] = [];
-  const subgraphDataMap = new Map(subgraphs.map((sg) => [sg.id, sg]));
 
-  for (const child of layoutResult.children ?? []) {
-    const sgData = subgraphDataMap.get(child.id);
-    if (sgData) {
-      const x = child.x ?? 0;
-      const y = child.y ?? 0;
-      const w = child.width ?? 200;
-      const h = child.height ?? 100;
-      positionedSubgraphs.push({ data: sgData, x, y, width: w, height: h });
-      maxX = Math.max(maxX, x + w);
-      maxY = Math.max(maxY, y + h);
+  for (const sg of subgraphs) {
+    const memberNodes = sg.nodeIds
+      .map((id) => positionedNodeMap.get(id))
+      .filter((n): n is PositionedFlowNode => n !== undefined);
+    if (memberNodes.length === 0) continue;
+
+    let minX = Infinity, minY = Infinity, sgMaxX = 0, sgMaxY = 0;
+    for (const n of memberNodes) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      sgMaxX = Math.max(sgMaxX, n.x + n.width);
+      sgMaxY = Math.max(sgMaxY, n.y + n.height);
     }
+
+    const x = minX - SUBGRAPH_PADDING;
+    const y = minY - SUBGRAPH_PADDING - 20; // extra top for label
+    const w = sgMaxX - minX + SUBGRAPH_PADDING * 2;
+    const h = sgMaxY - minY + SUBGRAPH_PADDING * 2 + 20;
+    positionedSubgraphs.push({ data: sg, x, y, width: w, height: h });
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  }
+
+  // Snap edge endpoint to polygon boundary for non-rectangular shapes.
+  // ELK computes endpoints on the rectangular bbox; for diamond/hexagon
+  // we project onto the nearest polygon edge based on which side of the
+  // bounding box the point sits on.
+  function snapToShape(point: Point, node: PositionedFlowNode): Point {
+    const { shape } = node.data;
+    if (shape !== 'diamond' && shape !== 'hexagon') return point;
+
+    const nx = node.x;
+    const ny = node.y;
+    const nw = node.width;
+    const nh = node.height;
+    const cx = nx + nw / 2;
+    const cy = ny + nh / 2;
+
+    const distTop = Math.abs(point.y - ny);
+    const distBottom = Math.abs(point.y - (ny + nh));
+    const distLeft = Math.abs(point.x - nx);
+    const distRight = Math.abs(point.x - (nx + nw));
+    const minDist = Math.min(distTop, distBottom, distLeft, distRight);
+
+    if (shape === 'diamond') {
+      if (minDist === distTop) return { x: cx, y: ny };
+      if (minDist === distBottom) return { x: cx, y: ny + nh };
+      if (minDist === distLeft) return { x: nx, y: cy };
+      return { x: nx + nw, y: cy };
+    }
+
+    // hexagon: top/bottom edges are flat, left/right are pointy vertices
+    if (minDist === distLeft) return { x: nx, y: cy };
+    if (minDist === distRight) return { x: nx + nw, y: cy };
+    return point; // top/bottom edges are flat, keep original x
   }
 
   // Extract edge bend points (same pattern as class-diagram/layout.ts)
@@ -273,6 +284,9 @@ export async function layoutFlowchart(
     const data = edgeDataMap.get(elkEdge.id);
     if (!data) continue;
 
+    const sourceNode = positionedNodeMap.get(data.sourceId);
+    const targetNode = positionedNodeMap.get(data.targetId);
+
     const section = (elkEdge as { sections?: Array<{
       startPoint: Point;
       endPoint: Point;
@@ -280,30 +294,32 @@ export async function layoutFlowchart(
     }> }).sections?.[0];
 
     if (section) {
+      const sp = sourceNode
+        ? snapToShape(section.startPoint, sourceNode)
+        : section.startPoint;
+      const tp = targetNode
+        ? snapToShape(section.endPoint, targetNode)
+        : section.endPoint;
       positionedEdges.push({
         data,
-        sourcePoint: { x: section.startPoint.x, y: section.startPoint.y },
-        targetPoint: { x: section.endPoint.x, y: section.endPoint.y },
+        sourcePoint: { x: sp.x, y: sp.y },
+        targetPoint: { x: tp.x, y: tp.y },
         bendPoints: (section.bendPoints ?? []).map((p) => ({ x: p.x, y: p.y })),
       });
-    } else {
+    } else if (sourceNode && targetNode) {
       // Fallback: straight line between node centers
-      const sourceNode = positionedNodes.find((n) => n.data.id === data.sourceId);
-      const targetNode = positionedNodes.find((n) => n.data.id === data.targetId);
-      if (sourceNode && targetNode) {
-        positionedEdges.push({
-          data,
-          sourcePoint: {
-            x: sourceNode.x + sourceNode.width / 2,
-            y: sourceNode.y + sourceNode.height / 2,
-          },
-          targetPoint: {
-            x: targetNode.x + targetNode.width / 2,
-            y: targetNode.y + targetNode.height / 2,
-          },
-          bendPoints: [],
-        });
-      }
+      positionedEdges.push({
+        data,
+        sourcePoint: {
+          x: sourceNode.x + sourceNode.width / 2,
+          y: sourceNode.y + sourceNode.height / 2,
+        },
+        targetPoint: {
+          x: targetNode.x + targetNode.width / 2,
+          y: targetNode.y + targetNode.height / 2,
+        },
+        bendPoints: [],
+      });
     }
   }
 

@@ -15,6 +15,12 @@
   let hasSelection = $derived(state.selectedId !== null);
   let isDimmed = $derived(hasSelection && !isSelected && !isConnected);
 
+  let strokeColor = $derived(
+    isSelected ? '#0066ff' : isConnected ? '#66aaff' : isHovered ? '#555' : '#333',
+  );
+
+  let isSvgShape = $derived(node.data.shape === 'diamond' || node.data.shape === 'hexagon');
+
   function handleClick() {
     state.select(node.data.id);
   }
@@ -42,6 +48,26 @@
   onmouseenter={handleMouseEnter}
   onmouseleave={handleMouseLeave}
 >
+  {#if isSvgShape}
+    <svg class="shape-svg" viewBox="0 0 {node.width} {node.height}">
+      {#if node.data.shape === 'diamond'}
+        <polygon
+          points="{node.width / 2},1 {node.width - 1},{node.height / 2} {node.width / 2},{node.height - 1} 1,{node.height / 2}"
+          fill="white"
+          stroke={strokeColor}
+          stroke-width="2"
+        />
+      {:else if node.data.shape === 'hexagon'}
+        {@const inset = node.width * 0.1}
+        <polygon
+          points="{inset},1 {node.width - inset},1 {node.width - 1},{node.height / 2} {node.width - inset},{node.height - 1} {inset},{node.height - 1} 1,{node.height / 2}"
+          fill="white"
+          stroke={strokeColor}
+          stroke-width="2"
+        />
+      {/if}
+    </svg>
+  {/if}
   <span class="node-text">{node.data.text}</span>
 </div>
 
@@ -67,6 +93,8 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    position: relative;
+    z-index: 1;
   }
 
   /* Shape: rect — default rectangle */
@@ -84,11 +112,10 @@
     border-radius: 9999px;
   }
 
-  /* Shape: diamond — clip-path polygon */
+  /* Shape: diamond — SVG polygon, no CSS border */
   .shape-diamond {
     border: none;
-    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-    box-shadow: inset 0 0 0 2px #333;
+    background: none;
   }
 
   /* Shape: circle */
@@ -103,11 +130,20 @@
     border-right: 6px double #333;
   }
 
-  /* Shape: hexagon — pointy left/right */
+  /* Shape: hexagon — SVG polygon, no CSS border */
   .shape-hexagon {
     border: none;
-    clip-path: polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%);
-    box-shadow: inset 0 0 0 2px #333;
+    background: none;
+  }
+
+  /* SVG shape background */
+  .shape-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
   }
 
   /* --- Selection States --- */
@@ -132,20 +168,14 @@
     opacity: 0.35;
   }
 
-  /* clip-path shapes need inset box-shadow for border; override selection states */
+  /* SVG shapes: stroke color is reactive, suppress rectangular box-shadow */
   .shape-diamond.selected,
-  .shape-hexagon.selected {
-    box-shadow: inset 0 0 0 2px #0066ff, 0 0 0 3px rgba(0, 102, 255, 0.25);
-  }
-
   .shape-diamond.connected,
-  .shape-hexagon.connected {
-    box-shadow: inset 0 0 0 2px #66aaff, 0 0 0 2px rgba(102, 170, 255, 0.2);
-  }
-
   .shape-diamond.hovered:not(.selected),
+  .shape-hexagon.selected,
+  .shape-hexagon.connected,
   .shape-hexagon.hovered:not(.selected) {
-    box-shadow: inset 0 0 0 2px #555, 0 2px 8px rgba(0, 0, 0, 0.12);
+    box-shadow: none;
   }
 
   /* subroutine selection overrides double border color */
