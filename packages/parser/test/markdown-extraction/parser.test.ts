@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import type { AppLogObj } from "@speckey/logger";
 import { Logger } from "@speckey/logger";
+import { PipelineEventBus } from "@speckey/event-bus";
+import type { BusPayload, LogPayload } from "@speckey/event-bus";
+import { LogLevel, ParserEvent, PipelinePhase } from "@speckey/constants";
 import { MarkdownParser } from "../../src/markdown-extraction/parser";
 import { ErrorSeverity } from "../../src/markdown-extraction/types";
 
@@ -649,6 +652,141 @@ classDiagram
 		expect(warnLog).toBeDefined();
 
 		// Structured errors should also contain the warning
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
+	});
+});
+
+// ── Feature: Event Bus Integration ───────────────────────────────────────────
+
+describe("Feature: Event Bus Integration", () => {
+	const parser = new MarkdownParser();
+
+	it("should work without bus (backwards compatible)", () => {
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md");
+
+		expect(result.codeBlocks.mermaid).toHaveLength(1);
+		expect(result.errors).toHaveLength(0);
+	});
+
+	it("should accept optional bus and emit debug events", () => {
+		const bus = new PipelineEventBus();
+		const received: BusPayload[] = [];
+		bus.onAll((event) => received.push(event));
+
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+`;
+		const result = parser.parse(markdown, "test.md", bus);
+
+		expect(result.codeBlocks.mermaid).toHaveLength(1);
+		expect(received.length).toBeGreaterThan(0);
+		expect(
+			received.some((e) => e.event === ParserEvent.MARKDOWN_EXTRACTION),
+		).toBe(true);
+	});
+
+	it("should emit debug for code block extraction with count", () => {
+		const bus = new PipelineEventBus();
+		const received: BusPayload[] = [];
+		bus.onAll((event) => received.push(event));
+
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+
+\`\`\`typescript
+const x = 1;
+\`\`\`
+
+\`\`\`mermaid
+erDiagram
+  USER ||--o{ ORDER : places
+\`\`\`
+`;
+		parser.parse(markdown, "test.md", bus);
+
+		const codeBlockEvent = received.find(
+			(e) =>
+				e.event === ParserEvent.MARKDOWN_EXTRACTION &&
+				e.level === LogLevel.DEBUG &&
+				(e as LogPayload).message === "Extracted code blocks",
+		) as LogPayload;
+
+		expect(codeBlockEvent).toBeDefined();
+		expect(codeBlockEvent.phase).toBe(PipelinePhase.PARSE);
+		expect(codeBlockEvent.context?.count).toBe(3);
+		expect(codeBlockEvent.context?.file).toBe("test.md");
+	});
+
+	it("should emit debug for table extraction with count", () => {
+		const bus = new PipelineEventBus();
+		const received: BusPayload[] = [];
+		bus.onAll((event) => received.push(event));
+
+		const markdown = `
+\`\`\`mermaid
+classDiagram
+  class Foo
+\`\`\`
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+| C | D |
+|---|---|
+| 3 | 4 |
+
+| E | F |
+|---|---|
+| 5 | 6 |
+`;
+		parser.parse(markdown, "test.md", bus);
+
+		const tableEvent = received.find(
+			(e) =>
+				e.event === ParserEvent.MARKDOWN_EXTRACTION &&
+				e.level === LogLevel.DEBUG &&
+				(e as LogPayload).message === "Extracted tables",
+		) as LogPayload;
+
+		expect(tableEvent).toBeDefined();
+		expect(tableEvent.phase).toBe(PipelinePhase.PARSE);
+		expect(tableEvent.context?.count).toBe(3);
+		expect(tableEvent.context?.file).toBe("test.md");
+	});
+
+	it("should emit warn for no code blocks", () => {
+		const bus = new PipelineEventBus();
+		const received: BusPayload[] = [];
+		bus.onAll((event) => received.push(event));
+
+		const markdown = "# Just text\nNo code here.";
+		const result = parser.parse(markdown, "test.md", bus);
+
+		const warnEvent = received.find(
+			(e) =>
+				e.event === ParserEvent.MARKDOWN_EXTRACTION &&
+				e.level === LogLevel.WARN,
+		) as LogPayload;
+
+		expect(warnEvent).toBeDefined();
+		expect(warnEvent.phase).toBe(PipelinePhase.PARSE);
+		expect(warnEvent.message).toContain("No fenced code blocks");
+
+		// Structured errors should also contain the WARNING
 		expect(result.errors).toHaveLength(1);
 		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
 	});

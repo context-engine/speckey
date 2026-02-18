@@ -147,6 +147,8 @@
         "unist-util-visit": "^5.1.0",
       },
       "devDependencies": {
+        "@speckey/constants": "workspace:*",
+        "@speckey/event-bus": "workspace:*",
         "@types/mdast": "^4.0.4",
         "@types/unist": "^3.0.3",
       },

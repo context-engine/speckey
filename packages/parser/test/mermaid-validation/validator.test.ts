@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { Logger } from "@speckey/logger";
 import type { AppLogObj } from "@speckey/logger";
+import { PipelineEventBus } from "@speckey/event-bus";
+import type { BusPayload, LogPayload } from "@speckey/event-bus";
+import { LogLevel, ParserEvent, PipelinePhase } from "@speckey/constants";
 import { MermaidValidator } from "../../src/mermaid-validation/validator";
 import { DiagramType, ErrorSeverity } from "../../src/mermaid-validation/types";
 import type { CodeBlock } from "../../src/mermaid-validation/types";
@@ -278,6 +281,100 @@ describe("MermaidValidator", () => {
 			expect(result.errors[1]?.severity).toBe(ErrorSeverity.WARNING);
 			// Valid block still present
 			expect(result.validatedBlocks).toHaveLength(1);
+		});
+	});
+
+	// ── Feature: Event Bus Integration ────────────────────────────────────
+
+	describe("Feature: Event Bus Integration", () => {
+		it("should work without bus", async () => {
+			const block = makeBlock("classDiagram\n  class Foo");
+			const result = await validator.validateAll([block], "test.md");
+
+			expect(result.validatedBlocks).toHaveLength(1);
+			expect(result.errors).toHaveLength(0);
+		});
+
+		it("should accept optional bus and emit debug events", async () => {
+			const bus = new PipelineEventBus();
+			const received: BusPayload[] = [];
+			bus.onAll((event) => received.push(event));
+
+			const block = makeBlock("classDiagram\n  class Foo");
+			const result = await validator.validateAll([block], "test.md", bus);
+
+			expect(result.validatedBlocks).toHaveLength(1);
+			expect(received.length).toBeGreaterThan(0);
+			expect(
+				received.some(
+					(e) => e.event === ParserEvent.MERMAID_VALIDATION,
+				),
+			).toBe(true);
+		});
+
+		it("should emit debug for successful validation", async () => {
+			const bus = new PipelineEventBus();
+			const received: BusPayload[] = [];
+			bus.onAll((event) => received.push(event));
+
+			const block = makeBlock("classDiagram\n  class Foo", 10, 15);
+			await validator.validateAll([block], "specs/test.md", bus);
+
+			const debugEvent = received.find(
+				(e) =>
+					e.event === ParserEvent.MERMAID_VALIDATION &&
+					e.level === LogLevel.DEBUG &&
+					(e as LogPayload).message === "Block validated",
+			) as LogPayload;
+
+			expect(debugEvent).toBeDefined();
+			expect(debugEvent.phase).toBe(PipelinePhase.PARSE);
+			expect(debugEvent.context?.type).toBe(DiagramType.CLASS_DIAGRAM);
+			expect(debugEvent.context?.line).toBe(10);
+			expect(debugEvent.context?.file).toBe("specs/test.md");
+		});
+
+		it("should emit error for syntax failure", async () => {
+			const bus = new PipelineEventBus();
+			const received: BusPayload[] = [];
+			bus.onAll((event) => received.push(event));
+
+			const block = makeBlock("invalid syntax {{{", 5, 8);
+			await validator.validateAll([block], "specs/test.md", bus);
+
+			const errorEvent = received.find(
+				(e) =>
+					e.event === ParserEvent.MERMAID_VALIDATION &&
+					e.level === LogLevel.ERROR,
+			);
+
+			expect(errorEvent).toBeDefined();
+			expect(errorEvent!.phase).toBe(PipelinePhase.PARSE);
+			expect((errorEvent as any).path).toBe("specs/test.md");
+			expect((errorEvent as any).message).toBeDefined();
+			expect((errorEvent as any).code).toBe("LINE_5");
+			expect((errorEvent as any).userMessage).toEqual([
+				(errorEvent as any).message,
+			]);
+		});
+
+		it("should emit warn for empty block", async () => {
+			const bus = new PipelineEventBus();
+			const received: BusPayload[] = [];
+			bus.onAll((event) => received.push(event));
+
+			const block = makeBlock("", 7, 7);
+			await validator.validateAll([block], "test.md", bus);
+
+			const warnEvent = received.find(
+				(e) =>
+					e.event === ParserEvent.MERMAID_VALIDATION &&
+					e.level === LogLevel.WARN,
+			) as LogPayload;
+
+			expect(warnEvent).toBeDefined();
+			expect(warnEvent.phase).toBe(PipelinePhase.PARSE);
+			expect(warnEvent.message).toContain("Empty mermaid block");
 		});
 	});
 
