@@ -29,5 +29,24 @@ export type { Layer } from "./lib/extract-layers.ts";
 export { tagSvgWithLayers } from "./lib/tag-svg-layers.ts";
 export type { TagResult } from "./lib/tag-svg-layers.ts";
 
+// Custom flowchart renderer (HTML nodes + SVG edges, ELK layout)
+export { default as FlowchartView } from "./components/flowchart/FlowchartView.svelte";
+export { layoutFlowchart, transformAST as transformFlowchartAST } from "./components/flowchart/layout.ts";
+export { createFlowchartState } from "./components/flowchart/state.svelte.ts";
+export type { FlowchartState } from "./components/flowchart/state.svelte.ts";
+export type {
+    FlowNodeShape,
+    FlowLinkStroke,
+    FlowLinkArrowType,
+    FlowNodeData,
+    FlowEdgeData,
+    FlowSubgraphData,
+    Point,
+    PositionedFlowNode,
+    PositionedFlowEdge,
+    PositionedFlowSubgraph,
+    PositionedFlowchart,
+} from "./components/flowchart/types.ts";
+
 // Re-export mermaid-ast for convenience
-export { parseClassDiagram, parseSequence } from "@speckey/mermaid-ast";
+export { parseClassDiagram, parseSequence, parseFlowchart } from "@speckey/mermaid-ast";
