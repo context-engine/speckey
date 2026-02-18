@@ -1,4 +1,5 @@
-import type { AppLogObj, Logger } from "@speckey/logger";
+import type { PipelineEventBus } from "@speckey/event-bus";
+import { ParserEvent, PipelinePhase } from "@speckey/constants";
 import type { Code, TableRow as MdTableRow, Root, Table } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -25,13 +26,13 @@ export class MarkdownParser {
 	 *
 	 * @param content - The markdown raw text.
 	 * @param specFile - Path to the file being parsed.
-	 * @param logger - Optional logger (passed from pipeline).
+	 * @param bus - Optional event bus (passed from pipeline).
 	 * @returns An ExtractionResult containing code blocks grouped by language and tables.
 	 */
 	parse(
 		content: string,
 		specFile: string,
-		logger?: Logger<AppLogObj>,
+		bus?: PipelineEventBus,
 	): ExtractionResult {
 		const ast = this.buildAST(content);
 		const blocks = this.extractCodeBlocks(ast);
@@ -42,17 +43,17 @@ export class MarkdownParser {
 
 		if (blocks.length === 0) {
 			const message = "No fenced code blocks found in file";
-			logger?.warn(message, { file: specFile });
+			bus?.emitWarn(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, message, { file: specFile });
 			errors.push({ message, line: 0, severity: ErrorSeverity.WARNING });
 		} else {
-			logger?.debug("Extracted code blocks", {
+			bus?.emitDebug(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, "Extracted code blocks", {
 				count: blocks.length,
 				file: specFile,
 			});
 		}
 
 		if (tables.length > 0) {
-			logger?.debug("Extracted tables", {
+			bus?.emitDebug(ParserEvent.MARKDOWN_EXTRACTION, PipelinePhase.PARSE, "Extracted tables", {
 				count: tables.length,
 				file: specFile,
 			});

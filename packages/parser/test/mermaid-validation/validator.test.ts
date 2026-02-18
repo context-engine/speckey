@@ -1,6 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { Logger } from "@speckey/logger";
-import type { AppLogObj } from "@speckey/logger";
 import { PipelineEventBus } from "@speckey/event-bus";
 import type { BusPayload, LogPayload } from "@speckey/event-bus";
 import { LogLevel, ParserEvent, PipelinePhase } from "@speckey/constants";
@@ -9,23 +7,6 @@ import { DiagramType, ErrorSeverity } from "../../src/mermaid-validation/types";
 import type { CodeBlock } from "../../src/mermaid-validation/types";
 
 // ── Test Helpers ──────────────────────────────────────────────────────────────
-
-function createTestLogger() {
-	const logs: Record<string, unknown>[] = [];
-	const logger = new Logger<AppLogObj>({
-		name: "test-validator",
-		type: "hidden",
-		minLevel: 0,
-	});
-	logger.attachTransport((logObj: Record<string, unknown>) => {
-		logs.push(logObj);
-	});
-	return { logger, logs };
-}
-
-function getMsg(logEntry: Record<string, unknown>): string {
-	return typeof logEntry["0"] === "string" ? (logEntry["0"] as string) : "";
-}
 
 function makeBlock(content: string, startLine = 1, endLine = 5): CodeBlock {
 	return { language: "mermaid", content, startLine, endLine };
@@ -375,54 +356,6 @@ describe("MermaidValidator", () => {
 			expect(warnEvent).toBeDefined();
 			expect(warnEvent.phase).toBe(PipelinePhase.PARSE);
 			expect(warnEvent.message).toContain("Empty mermaid block");
-		});
-	});
-
-	// ── Feature: Logger Integration ────────────────────────────────────────
-
-	describe("Feature: Logger Integration", () => {
-		it("should work without logger", async () => {
-			const block = makeBlock("classDiagram\n  class Foo");
-			const result = await validator.validateAll([block], "test.md");
-
-			expect(result.validatedBlocks).toHaveLength(1);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		it("should accept optional logger and return correct result", async () => {
-			const { logger } = createTestLogger();
-			const block = makeBlock("classDiagram\n  class Foo");
-			const result = await validator.validateAll([block], "test.md", logger);
-
-			expect(result.validatedBlocks).toHaveLength(1);
-			expect(result.errors).toHaveLength(0);
-		});
-
-		it("should log debug for successful validation", async () => {
-			const { logger, logs } = createTestLogger();
-			const block = makeBlock("classDiagram\n  class Foo");
-			await validator.validateAll([block], "test.md", logger);
-
-			const debugLog = logs.find((l) => getMsg(l) === "Block validated");
-			expect(debugLog).toBeDefined();
-		});
-
-		it("should log error for syntax failure", async () => {
-			const { logger, logs } = createTestLogger();
-			const block = makeBlock("invalid syntax {{{");
-			await validator.validateAll([block], "test.md", logger);
-
-			const errorLog = logs.find((l) => getMsg(l) === "Mermaid syntax error");
-			expect(errorLog).toBeDefined();
-		});
-
-		it("should log warn for empty block", async () => {
-			const { logger, logs } = createTestLogger();
-			const block = makeBlock("");
-			await validator.validateAll([block], "test.md", logger);
-
-			const warnLog = logs.find((l) => getMsg(l).startsWith("Empty mermaid block"));
-			expect(warnLog).toBeDefined();
 		});
 	});
 

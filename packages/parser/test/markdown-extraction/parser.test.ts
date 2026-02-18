@@ -1,36 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import type { AppLogObj } from "@speckey/logger";
-import { Logger } from "@speckey/logger";
 import { PipelineEventBus } from "@speckey/event-bus";
 import type { BusPayload, LogPayload } from "@speckey/event-bus";
 import { LogLevel, ParserEvent, PipelinePhase } from "@speckey/constants";
 import { MarkdownParser } from "../../src/markdown-extraction/parser";
 import { ErrorSeverity } from "../../src/markdown-extraction/types";
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function createTestLogger() {
-	const logs: Record<string, unknown>[] = [];
-	const logger = new Logger<AppLogObj>({
-		name: "test-markdown-extraction",
-		type: "hidden",
-		minLevel: 0,
-	});
-	logger.attachTransport((logObj: Record<string, unknown>) => {
-		logs.push(logObj);
-	});
-	return { logger, logs };
-}
-
-function getMsg(logEntry: Record<string, unknown>): string {
-	return typeof logEntry["0"] === "string" ? (logEntry["0"] as string) : "";
-}
-
-function getData(
-	logEntry: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-	return logEntry["1"] as Record<string, unknown> | undefined;
-}
 
 // ── Feature: Code Block Extraction ───────────────────────────────────────────
 
@@ -543,117 +516,6 @@ classDiagram
 			e.message.toLowerCase().includes("table"),
 		);
 		expect(tableErrors).toHaveLength(0);
-	});
-});
-
-// ── Feature: Logger Integration ──────────────────────────────────────────────
-
-describe("Feature: Logger Integration", () => {
-	const parser = new MarkdownParser();
-
-	it("should work without logger (backwards compatible)", () => {
-		const markdown = `
-\`\`\`mermaid
-classDiagram
-  class Foo
-\`\`\`
-`;
-		const result = parser.parse(markdown, "test.md");
-
-		expect(result.codeBlocks.mermaid).toHaveLength(1);
-		expect(result.errors).toHaveLength(0);
-	});
-
-	it("should accept optional logger and return correct result", () => {
-		const { logger } = createTestLogger();
-		const markdown = `
-\`\`\`mermaid
-classDiagram
-  class Foo
-\`\`\`
-`;
-		const result = parser.parse(markdown, "test.md", logger);
-
-		expect(result.codeBlocks.mermaid).toHaveLength(1);
-		expect(result.errors).toHaveLength(0);
-	});
-
-	it("should emit debug for code block extraction", () => {
-		const { logger, logs } = createTestLogger();
-		const markdown = `
-\`\`\`mermaid
-classDiagram
-  class Foo
-\`\`\`
-
-\`\`\`typescript
-const x = 1;
-\`\`\`
-
-\`\`\`mermaid
-erDiagram
-  USER ||--o{ ORDER : places
-\`\`\`
-`;
-		parser.parse(markdown, "test.md", logger);
-
-		const codeBlockLog = logs.find(
-			(l) => getMsg(l) === "Extracted code blocks",
-		);
-		expect(codeBlockLog).toBeDefined();
-
-		if (codeBlockLog) {
-			const data = getData(codeBlockLog);
-			expect(data?.count).toBe(3);
-		}
-	});
-
-	it("should emit debug for table extraction", () => {
-		const { logger, logs } = createTestLogger();
-		const markdown = `
-\`\`\`mermaid
-classDiagram
-  class Foo
-\`\`\`
-
-| A | B |
-|---|---|
-| 1 | 2 |
-
-| C | D |
-|---|---|
-| 3 | 4 |
-
-| E | F |
-|---|---|
-| 5 | 6 |
-`;
-		parser.parse(markdown, "test.md", logger);
-
-		const tableLog = logs.find((l) => getMsg(l) === "Extracted tables");
-		expect(tableLog).toBeDefined();
-
-		if (tableLog) {
-			const data = getData(tableLog);
-			expect(data?.count).toBe(3);
-		}
-	});
-
-	it("should emit warn for no code blocks", () => {
-		const { logger, logs } = createTestLogger();
-		const markdown = "# Just text\nNo code here.";
-
-		const result = parser.parse(markdown, "test.md", logger);
-
-		// Logger should receive the warning
-		const warnLog = logs.find(
-			(l) => getMsg(l) === "No fenced code blocks found in file",
-		);
-		expect(warnLog).toBeDefined();
-
-		// Structured errors should also contain the warning
-		expect(result.errors).toHaveLength(1);
-		expect(result.errors[0]?.severity).toBe(ErrorSeverity.WARNING);
 	});
 });
 

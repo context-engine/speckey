@@ -1,5 +1,6 @@
 import { JSDOM } from "jsdom";
-import type { Logger, AppLogObj } from "@speckey/logger";
+import type { PipelineEventBus } from "@speckey/event-bus";
+import { ParserEvent, PipelinePhase } from "@speckey/constants";
 import type { CodeBlock } from "../markdown-extraction/types";
 import { ErrorSeverity } from "../markdown-extraction/types";
 import { DiagramType } from "./types";
@@ -72,7 +73,7 @@ export class MermaidValidator {
 	async validateAll(
 		blocks: CodeBlock[],
 		specFile: string,
-		logger?: Logger<AppLogObj>,
+		bus?: PipelineEventBus,
 	): Promise<ValidationResult> {
 		const mermaid = await ensureMermaidInitialized();
 
@@ -83,7 +84,7 @@ export class MermaidValidator {
 			// Empty / whitespace check before calling mermaid.parse()
 			if (block.content.trim().length === 0) {
 				const message = `Empty mermaid block at line ${block.startLine}`;
-				logger?.warn(message, { file: specFile, line: block.startLine });
+				bus?.emitWarn(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, message, { file: specFile, line: block.startLine });
 				errors.push({
 					message,
 					line: block.startLine,
@@ -96,7 +97,7 @@ export class MermaidValidator {
 				const result = await mermaid.parse(block.content);
 				if (result && typeof result === "object" && "diagramType" in result) {
 					const diagramType = mapDiagramType(result.diagramType as string);
-					logger?.debug("Block validated", {
+					bus?.emitDebug(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, "Block validated", {
 						type: diagramType,
 						line: block.startLine,
 						file: specFile,
@@ -112,10 +113,11 @@ export class MermaidValidator {
 			} catch (err) {
 				const message =
 					err instanceof Error ? err.message : "Mermaid syntax error";
-				logger?.error("Mermaid syntax error", {
-					file: specFile,
-					line: block.startLine,
-					error: message,
+				bus?.emitError(ParserEvent.MERMAID_VALIDATION, PipelinePhase.PARSE, {
+					path: specFile,
+					message,
+					code: `LINE_${block.startLine}`,
+					userMessage: [message],
 				});
 				errors.push({
 					message,
