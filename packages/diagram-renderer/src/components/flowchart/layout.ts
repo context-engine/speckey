@@ -243,12 +243,18 @@ export async function layoutFlowchart(
   }
 
   // Snap edge endpoint to polygon boundary for non-rectangular shapes.
-  // ELK computes endpoints on the rectangular bbox; for diamond/hexagon
-  // we project onto the nearest polygon edge based on which side of the
-  // bounding box the point sits on.
-  function snapToShape(point: Point, node: PositionedFlowNode): Point {
+  // Returns the snapped point and whether it exited vertically or
+  // horizontally so we can insert a bridge bend to keep edges orthogonal.
+  type ExitDir = 'vertical' | 'horizontal' | null;
+
+  function snapToShape(
+    point: Point,
+    node: PositionedFlowNode,
+  ): { point: Point; exit: ExitDir } {
     const { shape } = node.data;
-    if (shape !== 'diamond' && shape !== 'hexagon') return point;
+    if (shape !== 'diamond' && shape !== 'hexagon') {
+      return { point, exit: null };
+    }
 
     const nx = node.x;
     const ny = node.y;
@@ -264,16 +270,28 @@ export async function layoutFlowchart(
     const minDist = Math.min(distTop, distBottom, distLeft, distRight);
 
     if (shape === 'diamond') {
-      if (minDist === distTop) return { x: cx, y: ny };
-      if (minDist === distBottom) return { x: cx, y: ny + nh };
-      if (minDist === distLeft) return { x: nx, y: cy };
-      return { x: nx + nw, y: cy };
+      if (minDist === distTop) return { point: { x: cx, y: ny }, exit: 'vertical' };
+      if (minDist === distBottom) return { point: { x: cx, y: ny + nh }, exit: 'vertical' };
+      if (minDist === distLeft) return { point: { x: nx, y: cy }, exit: 'horizontal' };
+      return { point: { x: nx + nw, y: cy }, exit: 'horizontal' };
     }
 
-    // hexagon: top/bottom edges are flat, left/right are pointy vertices
-    if (minDist === distLeft) return { x: nx, y: cy };
-    if (minDist === distRight) return { x: nx + nw, y: cy };
-    return point; // top/bottom edges are flat, keep original x
+    // hexagon: left/right are pointy vertices, top/bottom are flat
+    if (minDist === distLeft) return { point: { x: nx, y: cy }, exit: 'horizontal' };
+    if (minDist === distRight) return { point: { x: nx + nw, y: cy }, exit: 'horizontal' };
+    return { point, exit: null };
+  }
+
+  // Insert a bridge bend point between a snapped endpoint and its adjacent
+  // bend/target so the path stays orthogonal (no diagonal segments).
+  function bridgeBend(snapped: Point, adjacent: Point, exit: ExitDir): Point | null {
+    if (!exit) return null;
+    // Already axis-aligned — no bridge needed
+    if (snapped.x === adjacent.x || snapped.y === adjacent.y) return null;
+    // Vertical exit (top/bottom): extend vertically first, then turn horizontal
+    if (exit === 'vertical') return { x: snapped.x, y: adjacent.y };
+    // Horizontal exit (left/right): extend horizontally first, then turn vertical
+    return { x: adjacent.x, y: snapped.y };
   }
 
   // Extract edge bend points (same pattern as class-diagram/layout.ts)
@@ -294,17 +312,29 @@ export async function layoutFlowchart(
     }> }).sections?.[0];
 
     if (section) {
-      const sp = sourceNode
+      const srcSnap = sourceNode
         ? snapToShape(section.startPoint, sourceNode)
-        : section.startPoint;
-      const tp = targetNode
+        : { point: section.startPoint, exit: null as ExitDir };
+      const tgtSnap = targetNode
         ? snapToShape(section.endPoint, targetNode)
-        : section.endPoint;
+        : { point: section.endPoint, exit: null as ExitDir };
+
+      const bends = (section.bendPoints ?? []).map((p) => ({ x: p.x, y: p.y }));
+
+      // Insert bridge bends to keep orthogonal routing after snap
+      const firstAdj = bends[0] ?? tgtSnap.point;
+      const srcBridge = bridgeBend(srcSnap.point, firstAdj, srcSnap.exit);
+      if (srcBridge) bends.unshift(srcBridge);
+
+      const lastAdj = bends[bends.length - 1] ?? srcSnap.point;
+      const tgtBridge = bridgeBend(tgtSnap.point, lastAdj, tgtSnap.exit);
+      if (tgtBridge) bends.push(tgtBridge);
+
       positionedEdges.push({
         data,
-        sourcePoint: { x: sp.x, y: sp.y },
-        targetPoint: { x: tp.x, y: tp.y },
-        bendPoints: (section.bendPoints ?? []).map((p) => ({ x: p.x, y: p.y })),
+        sourcePoint: srcSnap.point,
+        targetPoint: tgtSnap.point,
+        bendPoints: bends,
       });
     } else if (sourceNode && targetNode) {
       // Fallback: straight line between node centers
