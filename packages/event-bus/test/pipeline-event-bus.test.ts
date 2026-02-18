@@ -11,7 +11,6 @@ import {
 	type BusPayload,
 	type ErrorPayload,
 	type LogPayload,
-	type PhasePayload,
 	type EventHandler,
 } from "../src/types";
 import { PipelineEventBus } from "../src/pipeline-event-bus";
@@ -46,15 +45,16 @@ function makeLogPayload(
 	};
 }
 
-function makePhasePayload(
+function makePhaseLogPayload(
 	event: PhaseEvent.PHASE_START | PhaseEvent.PHASE_END = PhaseEvent.PHASE_START,
-	overrides: Partial<PhasePayload> = {},
-): PhasePayload {
+	overrides: Partial<LogPayload> = {},
+): LogPayload {
 	return {
 		event,
 		level: LogLevel.INFO,
 		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
+		message: `Phase ${event}`,
 		...overrides,
 	};
 }
@@ -172,8 +172,8 @@ describe("PipelineEventBus", () => {
 			bus.emit(makeLogPayload(LogLevel.WARN));
 			bus.emit(makeLogPayload(LogLevel.INFO));
 			bus.emit(makeLogPayload(LogLevel.DEBUG));
-			bus.emit(makePhasePayload(PhaseEvent.PHASE_START));
-			bus.emit(makePhasePayload(PhaseEvent.PHASE_END));
+			bus.emit(makePhaseLogPayload(PhaseEvent.PHASE_START));
+			bus.emit(makePhaseLogPayload(PhaseEvent.PHASE_END));
 
 			expect(received).toHaveLength(6);
 		});
@@ -430,23 +430,23 @@ describe("PipelineEventBus", () => {
 			expect(log.context).toEqual({ dir: "/src" });
 		});
 
-		it("should deliver PhasePayload unchanged (same object reference)", () => {
+		it("should deliver phase LogPayload unchanged (same object reference)", () => {
 			let received: BusPayload | undefined;
 			bus.onEvent(PhaseEvent.PHASE_END, (e) => { received = e; });
 
-			const payload = makePhasePayload(PhaseEvent.PHASE_END, {
+			const payload = makePhaseLogPayload(PhaseEvent.PHASE_END, {
 				phase: PipelinePhase.DISCOVERY,
-				stats: { filesFound: 42 },
+				context: { filesFound: 42 },
 			});
 
 			bus.emit(payload);
 
 			expect(received).toBe(payload);
-			const phase = received as PhasePayload;
-			expect(phase.event).toBe(PhaseEvent.PHASE_END);
-			expect(phase.level).toBe(LogLevel.INFO);
-			expect(phase.phase).toBe(PipelinePhase.DISCOVERY);
-			expect(phase.stats).toEqual({ filesFound: 42 });
+			const log = received as LogPayload;
+			expect(log.event).toBe(PhaseEvent.PHASE_END);
+			expect(log.level).toBe(LogLevel.INFO);
+			expect(log.phase).toBe(PipelinePhase.DISCOVERY);
+			expect(log.context).toEqual({ filesFound: 42 });
 		});
 	});
 
@@ -582,8 +582,8 @@ describe("PipelineEventBus", () => {
 			expect(() => freshBus.emit(makeLogPayload(LogLevel.WARN))).not.toThrow();
 			expect(() => freshBus.emit(makeLogPayload(LogLevel.INFO))).not.toThrow();
 			expect(() => freshBus.emit(makeLogPayload(LogLevel.DEBUG))).not.toThrow();
-			expect(() => freshBus.emit(makePhasePayload(PhaseEvent.PHASE_START))).not.toThrow();
-			expect(() => freshBus.emit(makePhasePayload(PhaseEvent.PHASE_END))).not.toThrow();
+			expect(() => freshBus.emit(makePhaseLogPayload(PhaseEvent.PHASE_START))).not.toThrow();
+			expect(() => freshBus.emit(makePhaseLogPayload(PhaseEvent.PHASE_END))).not.toThrow();
 		});
 
 		it("offLevel should not affect onEvent or onAll handlers", () => {

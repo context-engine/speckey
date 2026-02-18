@@ -8,7 +8,6 @@ import {
 import type { ExtractionResult, RoutedDiagrams, ValidatedMermaidBlock } from "@speckey/parser";
 import type { Logger, AppLogObj } from "@speckey/logger";
 import { PipelineEventBus } from "@speckey/event-bus";
-import type { PhasePayload } from "@speckey/event-bus";
 import { LogLevel, PipelinePhase, PhaseEvent, IoEvent, ParserEvent } from "@speckey/constants";
 import { LogSubscriber } from "./log-subscriber";
 import { ErrorSubscriber } from "./error-subscriber";
@@ -93,22 +92,22 @@ export class ParsePipeline {
         };
 
         // Phase 1: Discover + Read
-        bus.emit({ event: PhaseEvent.PHASE_START, level: LogLevel.INFO, phase: PipelinePhase.DISCOVERY, timestamp: Date.now() } as PhasePayload);
+        bus.emitInfo(PhaseEvent.PHASE_START, PipelinePhase.DISCOVERY, "Phase started");
 
         const discoveredFiles = await this.discover(config.paths, resolvedConfig, bus);
         const fileContents = await this.read(discoveredFiles, resolvedConfig.maxFileSizeMb, bus);
 
-        bus.emit({ event: PhaseEvent.PHASE_END, level: LogLevel.INFO, phase: PipelinePhase.DISCOVERY, timestamp: Date.now(),
-            stats: { filesFound: discoveredFiles.length, filesRead: fileContents.length } } as PhasePayload);
+        bus.emitInfo(PhaseEvent.PHASE_END, PipelinePhase.DISCOVERY, "Phase ended",
+            { filesFound: discoveredFiles.length, filesRead: fileContents.length });
 
         // Phase 2: Extract + Validate
-        bus.emit({ event: PhaseEvent.PHASE_START, level: LogLevel.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now() } as PhasePayload);
+        bus.emitInfo(PhaseEvent.PHASE_START, PipelinePhase.PARSE, "Phase started");
 
         const extractedFiles = this.extractMarkdown(fileContents, bus);
         const { parsedFiles, routedDiagrams, blocksExtracted } = await this.validateMermaid(extractedFiles, bus);
 
-        bus.emit({ event: PhaseEvent.PHASE_END, level: LogLevel.INFO, phase: PipelinePhase.PARSE, timestamp: Date.now(),
-            stats: { filesParsed: parsedFiles.length, blocksExtracted } } as PhasePayload);
+        bus.emitInfo(PhaseEvent.PHASE_END, PipelinePhase.PARSE, "Phase ended",
+            { filesParsed: parsedFiles.length, blocksExtracted });
 
         // --- PHASE GATE: early return while verifying components incrementally ---
         // Move this return past each phase as it is verified.

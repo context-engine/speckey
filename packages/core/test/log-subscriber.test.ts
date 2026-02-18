@@ -12,7 +12,6 @@ import {
 	type BusPayload,
 	type ErrorPayload,
 	type LogPayload,
-	type PhasePayload,
 } from "@speckey/event-bus";
 import { LogSubscriber } from "../src/log-subscriber";
 
@@ -59,15 +58,16 @@ function makeLogPayload(
 	};
 }
 
-function makePhasePayload(
+function makePhaseLogPayload(
 	event: PhaseEvent.PHASE_START | PhaseEvent.PHASE_END = PhaseEvent.PHASE_START,
-	overrides: Partial<PhasePayload> = {},
-): PhasePayload {
+	overrides: Partial<LogPayload> = {},
+): LogPayload {
 	return {
 		event,
 		level: LogLevel.INFO,
 		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
+		message: `Phase ${event}`,
 		...overrides,
 	};
 }
@@ -145,8 +145,8 @@ describe("LogSubscriber", () => {
 			expect(logStr).toContain("Reading file");
 		});
 
-		it("should route PhasePayload (PHASE_START) to logger.info", () => {
-			const payload = makePhasePayload(PhaseEvent.PHASE_START, {
+		it("should route phase PHASE_START event to logger.info", () => {
+			const payload = makePhaseLogPayload(PhaseEvent.PHASE_START, {
 				phase: PipelinePhase.PARSE,
 			});
 
@@ -157,10 +157,10 @@ describe("LogSubscriber", () => {
 			expect(logStr).toContain("parse");
 		});
 
-		it("should route PhasePayload (PHASE_END) to logger.info", () => {
-			const payload = makePhasePayload(PhaseEvent.PHASE_END, {
+		it("should route phase PHASE_END event to logger.info", () => {
+			const payload = makePhaseLogPayload(PhaseEvent.PHASE_END, {
 				phase: PipelinePhase.DISCOVERY,
-				stats: { filesFound: 10 },
+				context: { filesFound: 10 },
 			});
 
 			subscriber.handle(payload);
@@ -180,8 +180,8 @@ describe("LogSubscriber", () => {
 				makeLogPayload(LogLevel.WARN),
 				makeLogPayload(LogLevel.INFO),
 				makeLogPayload(LogLevel.DEBUG),
-				makePhasePayload(PhaseEvent.PHASE_START),
-				makePhasePayload(PhaseEvent.PHASE_END),
+				makePhaseLogPayload(PhaseEvent.PHASE_START),
+				makePhaseLogPayload(PhaseEvent.PHASE_END),
 			];
 
 			for (const payload of payloads) {
@@ -195,7 +195,7 @@ describe("LogSubscriber", () => {
 		it("should include phase in all log entries", () => {
 			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.BUILD }));
 			subscriber.handle(makeLogPayload(LogLevel.INFO, { phase: PipelinePhase.PARSE }));
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START, { phase: PipelinePhase.WRITE }));
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_START, { phase: PipelinePhase.WRITE }));
 
 			for (const log of logs) {
 				const logStr = JSON.stringify(log);
@@ -244,10 +244,10 @@ describe("LogSubscriber", () => {
 			expect(logStr).toContain("Files processed");
 		});
 
-		it("should forward PhasePayload stats", () => {
-			const payload = makePhasePayload(PhaseEvent.PHASE_END, {
+		it("should forward phase event context", () => {
+			const payload = makePhaseLogPayload(PhaseEvent.PHASE_END, {
 				phase: PipelinePhase.DISCOVERY,
-				stats: { filesFound: 42, errorsCount: 1 },
+				context: { filesFound: 42, errorsCount: 1 },
 			});
 
 			subscriber.handle(payload);

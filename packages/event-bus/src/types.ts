@@ -1,4 +1,4 @@
-import type { LogLevel, PipelineEvent, PhaseEvent, PipelinePhase, UserErrorMessage } from "@speckey/constants";
+import type { LogLevel, PipelineEvent, PipelinePhase, UserErrorMessage } from "@speckey/constants";
 
 /**
  * Base interface for all payloads emitted through the pipeline event bus.
@@ -31,14 +31,6 @@ export interface LogPayload extends BusPayload {
 	context?: Record<string, unknown>;
 }
 
-/**
- * Payload for phase boundary events — marks PHASE_START and PHASE_END.
- */
-export interface PhasePayload extends BusPayload {
-	event: PhaseEvent;
-	level: LogLevel.INFO;
-	stats?: Record<string, number>;
-}
 
 /**
  * Callback type for event subscribers.

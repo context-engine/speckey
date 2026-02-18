@@ -2,7 +2,6 @@ export {
 	type BusPayload,
 	type ErrorPayload,
 	type LogPayload,
-	type PhasePayload,
 	type EventHandler,
 } from "./types";
 

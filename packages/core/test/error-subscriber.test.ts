@@ -10,7 +10,6 @@ import {
 	type BusPayload,
 	type ErrorPayload,
 	type LogPayload,
-	type PhasePayload,
 } from "@speckey/event-bus";
 import { ErrorSubscriber } from "../src/error-subscriber";
 
@@ -44,15 +43,16 @@ function makeLogPayload(
 	};
 }
 
-function makePhasePayload(
+function makePhaseLogPayload(
 	event: PhaseEvent.PHASE_START | PhaseEvent.PHASE_END = PhaseEvent.PHASE_START,
-	overrides: Partial<PhasePayload> = {},
-): PhasePayload {
+	overrides: Partial<LogPayload> = {},
+): LogPayload {
 	return {
 		event,
 		level: LogLevel.INFO,
 		phase: PipelinePhase.DISCOVERY,
 		timestamp: Date.now(),
+		message: `Phase ${event}`,
 		...overrides,
 	};
 }
@@ -202,9 +202,9 @@ describe("ErrorSubscriber", () => {
 			expect(subscriber.count).toBe(0);
 		});
 
-		it("should ignore PhasePayload payloads", () => {
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
+		it("should ignore phase event payloads", () => {
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(0);
 			expect(subscriber.count).toBe(0);
@@ -215,8 +215,8 @@ describe("ErrorSubscriber", () => {
 				makeLogPayload(LogLevel.WARN),
 				makeLogPayload(LogLevel.INFO),
 				makeLogPayload(LogLevel.DEBUG),
-				makePhasePayload(PhaseEvent.PHASE_START),
-				makePhasePayload(PhaseEvent.PHASE_END),
+				makePhaseLogPayload(PhaseEvent.PHASE_START),
+				makePhaseLogPayload(PhaseEvent.PHASE_END),
 			];
 
 			for (const payload of nonErrorPayloads) {
@@ -232,15 +232,15 @@ describe("ErrorSubscriber", () => {
 
 	describe("Feature: Mixed Payload Stream", () => {
 		it("should accumulate only ERROR payloads from a mixed stream", () => {
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
 			subscriber.handle(makeLogPayload(LogLevel.INFO) as unknown as ErrorPayload);
 			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.DISCOVERY, code: "ENOENT" }));
 			subscriber.handle(makeLogPayload(LogLevel.WARN) as unknown as ErrorPayload);
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_START) as unknown as ErrorPayload);
 			subscriber.handle(makeErrorPayload({ phase: PipelinePhase.READ, code: "EACCES" }));
 			subscriber.handle(makeLogPayload(LogLevel.DEBUG) as unknown as ErrorPayload);
-			subscriber.handle(makePhasePayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
+			subscriber.handle(makePhaseLogPayload(PhaseEvent.PHASE_END) as unknown as ErrorPayload);
 
 			expect(subscriber.errors).toHaveLength(2);
 			expect(subscriber.count).toBe(2);
