@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Pipeline, PipelineConfig, PipelineResult, PipelineStats } from "@speckey/core";
 import type { Logger, AppLogObj } from "@speckey/logger";
+import { PipelinePhase } from "@speckey/constants";
 import { CLI } from "../src/cli";
 import { Command, ExitCode } from "../src/types";
 
@@ -420,6 +421,59 @@ describe("CLI", () => {
         it("should accept multiple paths", async () => {
             const exitCode = await cli.run(["parse", testDir, testDir, "--quiet", "--no-config"]);
             expect(exitCode).toBe(ExitCode.SUCCESS);
+        });
+    });
+
+    // ============================================================
+    // Feature: Exit-Code Error Summary
+    // ============================================================
+
+    describe("Exit-Code Error Summary", () => {
+        it("should log error summary when pipeline has errors", async () => {
+            const logEntries: Record<string, unknown>[] = [];
+            const spyPipeline: Pipeline = {
+                async run(_config: PipelineConfig, logger: Logger<AppLogObj>): Promise<PipelineResult> {
+                    logger.attachTransport((logObj: Record<string, unknown>) => {
+                        logEntries.push(logObj);
+                    });
+                    return createMockResult({
+                        errors: [{ phase: PipelinePhase.DISCOVERY, path: "/bad", message: "Path not found", code: "ENOENT", userMessage: ["File not found"] }],
+                        stats: createMockStats({ errorsCount: 1 }),
+                    });
+                },
+            };
+            cli = new CLI(spyPipeline);
+            const exitCode = await cli.run(["parse", testDir, "--quiet", "--no-config"]);
+
+            expect(exitCode).toBe(ExitCode.PARSE_ERROR);
+            const errorLogs = logEntries.filter(l => {
+                const meta = l["_meta"] as Record<string, unknown> | undefined;
+                return meta?.["logLevelName"] === "ERROR";
+            });
+            expect(errorLogs.length).toBeGreaterThanOrEqual(1);
+            const logStr = JSON.stringify(errorLogs[errorLogs.length - 1]);
+            expect(logStr).toContain("Path not found");
+        });
+
+        it("should NOT log error summary on successful exit", async () => {
+            const logEntries: Record<string, unknown>[] = [];
+            const spyPipeline: Pipeline = {
+                async run(_config: PipelineConfig, logger: Logger<AppLogObj>): Promise<PipelineResult> {
+                    logger.attachTransport((logObj: Record<string, unknown>) => {
+                        logEntries.push(logObj);
+                    });
+                    return createMockResult();
+                },
+            };
+            cli = new CLI(spyPipeline);
+            const exitCode = await cli.run(["parse", testDir, "--quiet", "--no-config"]);
+
+            expect(exitCode).toBe(ExitCode.SUCCESS);
+            const errorLogs = logEntries.filter(l => {
+                const meta = l["_meta"] as Record<string, unknown> | undefined;
+                return meta?.["logLevelName"] === "ERROR";
+            });
+            expect(errorLogs.length).toBe(0);
         });
     });
 });

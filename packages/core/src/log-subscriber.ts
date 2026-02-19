@@ -7,7 +7,8 @@ import type { BusPayload, ErrorPayload, LogPayload } from "@speckey/event-bus";
  * appropriate Logger method based on payload level.
  *
  * Routing:
- *   ERROR, WARN  → logger.warn()
+ *   ERROR        → logger.error()
+ *   WARN         → logger.warn()
  *   INFO         → logger.info()
  *   DEBUG        → logger.debug()
  *   PHASE_START/PHASE_END events → logger.info() (with phase start/end formatting)
@@ -38,7 +39,7 @@ export class LogSubscriber {
 		switch (event.level) {
 			case LogLevel.ERROR: {
 				const e = event as ErrorPayload;
-				this.logger.warn(e.message, { phase: e.phase, path: e.path, code: e.code });
+				this.logger.error(e.message, { phase: e.phase, path: e.path, code: e.code });
 				break;
 			}
 			case LogLevel.WARN: {

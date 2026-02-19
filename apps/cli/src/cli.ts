@@ -72,8 +72,14 @@ export class CLI {
         // Run pipeline — logger passed for streaming output
         const result = await this.pipeline.run(config, logger);
 
-        // Determine exit code
-        return this.getExitCode(options.command, result);
+        // Determine exit code and log error summary for non-zero exits
+        const exitCode = this.getExitCode(options.command, result);
+        if (exitCode !== ExitCode.SUCCESS && result.errors.length > 0) {
+            for (const err of result.errors) {
+                logger.error(`[${err.phase}] ${err.path}: ${err.message}`, { code: err.code });
+            }
+        }
+        return exitCode;
     }
 
     /**

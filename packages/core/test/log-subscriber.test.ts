@@ -87,7 +87,7 @@ describe("LogSubscriber", () => {
 	// ─── Feature: Level-Based Routing ───
 
 	describe("Feature: Level-Based Routing", () => {
-		it("should route ERROR-level payloads to logger.warn", () => {
+		it("should route ERROR-level payloads to logger.error", () => {
 			const payload = makeErrorPayload({
 				phase: PipelinePhase.READ,
 				message: "Permission denied",
@@ -99,6 +99,8 @@ describe("LogSubscriber", () => {
 			expect(logs.length).toBeGreaterThanOrEqual(1);
 			const lastLog = logs[logs.length - 1];
 			expect(lastLog?.["_meta"]).toBeDefined();
+			const meta = lastLog?.["_meta"] as Record<string, unknown>;
+			expect(meta?.["logLevelName"]).toBe("ERROR");
 			const logStr = JSON.stringify(lastLog);
 			expect(logStr).toContain("Permission denied");
 		});

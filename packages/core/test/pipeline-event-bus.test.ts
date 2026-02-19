@@ -125,7 +125,7 @@ classDiagram
 			expect(logs.length).toBeGreaterThan(0);
 		});
 
-		it("should route error events to logger.warn on discovery failure", async () => {
+		it("should route error events to logger.error on discovery failure", async () => {
 			const { logger, logs } = createTestLogger();
 			const config: PipelineConfig = {
 				paths: ["/nonexistent/path"],
@@ -133,14 +133,14 @@ classDiagram
 
 			await pipeline.run(config, logger);
 
-			// LogSubscriber should have routed the ERROR event to logger.warn
-			// Check that warn-level logs exist (logLevelId 4 = warn)
-			const warnLogs = logs.filter((l) => {
+			// LogSubscriber should have routed the ERROR event to logger.error
+			// Check that error-level logs exist (logLevelId 5 = error)
+			const errorLogs = logs.filter((l) => {
 				const meta = l["_meta"] as { logLevelId?: number } | undefined;
-				return meta?.logLevelId === 4;
+				return meta?.logLevelId === 5;
 			});
 
-			expect(warnLogs.length).toBeGreaterThan(0);
+			expect(errorLogs.length).toBeGreaterThan(0);
 		});
 
 		it("should route phase lifecycle events to logger.info", async () => {
