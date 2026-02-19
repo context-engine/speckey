@@ -205,6 +205,32 @@ describe("FileDiscovery", () => {
 
 			expect(result.files.length).toBe(2);
 		});
+
+		it("should emit WARN and EMPTY_DIRECTORY error when rootDir is a file", async () => {
+			const { bus, errors, warnings } = createTestBus();
+			// Use an actual file as rootDir — glob.scan() will throw ENOTDIR
+			const config = {
+				include: ["**/*.md"],
+				exclude: [],
+				maxFiles: 100,
+				maxFileSizeMb: 10,
+				rootDir: join(testDir, "spec1.md"), // a file, not a directory
+			};
+
+			const result = await discovery.discover(config, bus);
+
+			// Should return empty files
+			expect(result.files).toHaveLength(0);
+
+			// Should emit WARN for ENOTDIR
+			const enotdirWarn = warnings.find((w) => w.message === "Path is not a directory");
+			expect(enotdirWarn).toBeDefined();
+
+			// Should emit ERROR for EMPTY_DIRECTORY (from EMPTY CHECK)
+			expect(errors).toHaveLength(1);
+			expect(errors[0]?.code).toBe("EMPTY_DIRECTORY");
+			expect(errors[0]?.userMessage).toBe(DiscoveryErrors.EMPTY_DIRECTORY);
+		});
 	});
 
 	// ============================================================

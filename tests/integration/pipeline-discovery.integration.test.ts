@@ -217,6 +217,20 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
             expect(err.code).toBe("EMPTY_DIRECTORY");
         });
 
+        it("should map file-as-rootDir to EMPTY_DIRECTORY with phase='discovery'", async () => {
+            const config: PipelineConfig = {
+                paths: [join(TEMP_DIR, "mixed-types", "file-a.md")],
+            };
+
+            const result = await pipeline.run(config);
+
+            expect(result.errors.length).toBeGreaterThanOrEqual(1);
+            const err = result.errors.find((e) => e.code === "EMPTY_DIRECTORY");
+            expect(err).toBeDefined();
+            expect(err!.phase).toBe(PipelinePhase.DISCOVERY);
+            expect(result.stats.filesDiscovered).toBe(0);
+        });
+
         it("should preserve all error fields from DiscoveryError", async () => {
             const config: PipelineConfig = {
                 paths: [join(TEMP_DIR, "nonexistent-path-2")],
@@ -469,10 +483,10 @@ describe("Pipeline ↔ FileDiscovery Integration", () => {
 
             const scoped = discoveryScoped(logs);
 
-            // ERROR events logged at warn level by LogSubscriber
+            // ERROR events logged at error level by LogSubscriber
             const errorLog = scoped.find((l) => {
                 const meta = l["_meta"] as { logLevelName?: string } | undefined;
-                return meta?.logLevelName === "WARN";
+                return meta?.logLevelName === "ERROR";
             });
             expect(errorLog).toBeDefined();
         });

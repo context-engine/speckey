@@ -44,6 +44,7 @@ export class FileDiscovery {
 			const allMatchedFiles = await this.applyGlobPatterns(
 				config.include,
 				rootDir,
+				bus,
 			);
 
 			// 2. Filter and validate
@@ -181,6 +182,7 @@ export class FileDiscovery {
 	private async applyGlobPatterns(
 		patterns: string[],
 		rootDir: string,
+		bus?: PipelineEventBus,
 	): Promise<string[]> {
 		const matchedFilesSet = new Set<string>();
 
@@ -198,14 +200,23 @@ export class FileDiscovery {
 				});
 			}
 
-			const matches = glob.scan({
-				cwd: rootDir,
-				onlyFiles: true,
-				absolute: true,
-			});
+			try {
+				const matches = glob.scan({
+					cwd: rootDir,
+					onlyFiles: true,
+					absolute: true,
+				});
 
-			for await (const match of matches) {
-				matchedFilesSet.add(match);
+				for await (const match of matches) {
+					matchedFilesSet.add(match);
+				}
+			} catch (error: unknown) {
+				const code = (error as { code?: string })?.code;
+				if (code === "ENOTDIR") {
+					bus?.emitWarn(IoEvent.FILE_DISCOVERY, PipelinePhase.DISCOVERY, "Path is not a directory", { path: rootDir });
+					return [];
+				}
+				throw error;
 			}
 		}
 
